@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ProfessorAI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Release 1</p>
+          <h1>AI Lecture Mode</h1>
+          <p class="lede">Turn lecture-note PDFs into a page-by-page interactive lecture.</p>
+        </div>
+
+        <label class="upload-card">
+          <span class="upload-title">Load Lecture PDF</span>
+          <span class="upload-hint">Pick an MIT OCW-style lecture note PDF to start.</span>
+          <input id="pdf-input" type="file" accept="application/pdf" />
+        </label>
+
+        <div class="meta-card">
+          <div class="meta-row">
+            <span>Document</span>
+            <strong id="pdf-name">None loaded</strong>
+          </div>
+          <div class="meta-row">
+            <span>Page</span>
+            <strong id="page-indicator">0 / 0</strong>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="prev-page" class="ghost" disabled>Previous Page</button>
+          <button id="next-page" disabled>Next Page</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="viewer-panel">
+          <div class="panel-header">
+            <h2>Lecture Page</h2>
+            <span id="page-status">Upload a PDF to begin.</span>
+          </div>
+          <div class="pdf-frame">
+            <canvas id="pdf-canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="lecture-panel">
+          <div class="panel-header">
+            <h2>Lecture Controls</h2>
+            <span>Grounded to the current page</span>
+          </div>
+
+          <div class="quick-actions">
+            <button data-mode="explain-simple" disabled>Explain Simply</button>
+            <button data-mode="go-deeper" disabled>Go Deeper</button>
+            <button data-mode="quiz" disabled>Quiz Me</button>
+          </div>
+
+          <div id="response-output" class="response-output empty">
+            Upload a PDF, then choose an action.
+          </div>
+
+          <form id="question-form" class="ask-form">
+            <label for="page-question">Ask about this page</label>
+            <textarea
+              id="page-question"
+              rows="4"
+              placeholder="What does this derivation assume?"
+              disabled
+            ></textarea>
+            <button type="submit" disabled>Ask Question</button>
+          </form>
+
+          <form id="feedback-form" class="ask-form">
+            <label for="student-answer">Answer the quiz</label>
+            <textarea
+              id="student-answer"
+              rows="4"
+              placeholder="Write your answer here after clicking Quiz Me."
+              disabled
+            ></textarea>
+            <button type="submit" disabled>Get Feedback</button>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>
