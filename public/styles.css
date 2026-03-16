@@ -8,6 +8,8 @@
   --muted: #6b6157;
   --accent: #b8502b;
   --accent-dark: #8b3415;
+  --success: #2f6b4a;
+  --warning: #8c5f17;
   --shadow: 0 18px 50px rgba(87, 54, 35, 0.12);
 }
 
@@ -120,6 +122,28 @@ h2 {
   text-align: right;
 }
 
+.progress-track {
+  margin-top: 0.4rem;
+  height: 8px;
+  width: 100%;
+  background: #efe4d7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #d27d56);
+  transition: width 180ms ease;
+}
+
+.hint {
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .actions,
 .quick-actions {
   display: flex;
@@ -190,8 +214,7 @@ button.ghost {
   min-height: 400px;
   padding: 1rem;
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(248, 243, 235, 0.95), rgba(244, 238, 227, 0.95));
+  background: linear-gradient(180deg, rgba(248, 243, 235, 0.95), rgba(244, 238, 227, 0.95));
   border: 1px solid rgba(139, 52, 21, 0.08);
   overflow: auto;
 }
@@ -204,7 +227,50 @@ button.ghost {
 
 .quick-actions {
   flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.response-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.response-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.84rem;
+  background: #ede2d6;
+  color: var(--muted);
+}
+
+.response-status[data-tone="success"] {
+  background: #e1efe6;
+  color: var(--success);
+}
+
+.response-status[data-tone="warning"] {
+  background: #f6ecd9;
+  color: var(--warning);
+}
+
+.response-status[data-tone="loading"] {
+  color: var(--accent-dark);
+}
+
+.response-status[data-tone="loading"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(139, 52, 21, 0.25);
+  border-top-color: var(--accent-dark);
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  animation: spin 0.9s linear infinite;
 }
 
 .response-output {
@@ -214,8 +280,37 @@ button.ghost {
   background: var(--paper-strong);
   border: 1px solid rgba(139, 52, 21, 0.12);
   overflow: auto;
-  white-space: pre-wrap;
   line-height: 1.55;
+}
+
+.response-output h1,
+.response-output h2,
+.response-output h3,
+.response-output p,
+.response-output ul,
+.response-output ol {
+  margin: 0;
+}
+
+.response-output > * + * {
+  margin-top: 0.7rem;
+}
+
+.response-output ul,
+.response-output ol {
+  padding-left: 1.2rem;
+}
+
+.response-output code {
+  padding: 0.08rem 0.35rem;
+  border-radius: 8px;
+  background: #efe4d7;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.response-output a {
+  color: var(--accent-dark);
 }
 
 .response-output.empty {
@@ -237,6 +332,12 @@ textarea {
   background: #fff;
   padding: 0.9rem 1rem;
   color: var(--ink);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 1100px) {
