@@ -22,27 +22,113 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function extractOutputText(responseJson) {
-  if (typeof responseJson.output_text === "string" && responseJson.output_text.trim()) {
-    return responseJson.output_text.trim();
+function writeSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function openSse(res) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+  });
+}
+
+function extractCompletionText(payload) {
+  if (typeof payload?.text === "string" && payload.text.trim()) {
+    return payload.text.trim();
   }
 
-  const output = Array.isArray(responseJson.output) ? responseJson.output : [];
-  const parts = [];
+  if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
 
-  for (const item of output) {
-    if (item.type !== "message" || !Array.isArray(item.content)) {
-      continue;
+  const messageContent = payload?.choices?.[0]?.message?.content;
+  if (typeof messageContent === "string" && messageContent.trim()) {
+    return messageContent.trim();
+  }
+
+  if (Array.isArray(messageContent)) {
+    const parts = messageContent
+      .map((item) => (item?.type === "text" && typeof item.text === "string" ? item.text : ""))
+      .filter(Boolean);
+    if (parts.length) {
+      return parts.join("\n").trim();
     }
+  }
 
-    for (const content of item.content) {
-      if (content.type === "output_text" && typeof content.text === "string") {
-        parts.push(content.text);
+  return "";
+}
+
+async function streamTextFallback(res, text) {
+  const tokens = text.match(/\S+\s*/g) || [text];
+
+  for (const token of tokens) {
+    writeSse(res, "delta", { delta: token });
+    await new Promise((resolve) => setTimeout(resolve, 12));
+  }
+
+  writeSse(res, "done", { text });
+  res.end();
+}
+
+function createSseParser(onEvent) {
+  let buffer = "";
+
+  return (chunk, { flush = false } = {}) => {
+    buffer += chunk.replaceAll("\r\n", "\n");
+
+    while (true) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary === -1) {
+        break;
+      }
+
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+
+      const lines = rawEvent.split("\n");
+      let eventName = "message";
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+
+      if (dataLines.length) {
+        onEvent(eventName, dataLines.join("\n"));
       }
     }
-  }
 
-  return parts.join("\n").trim();
+    if (flush) {
+      const remainder = buffer.trim();
+      buffer = "";
+      if (!remainder) {
+        return;
+      }
+
+      const lines = remainder.split("\n");
+      let eventName = "message";
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+
+      if (dataLines.length) {
+        onEvent(eventName, dataLines.join("\n"));
+      }
+    }
+  };
 }
 
 async function handleResponseRequest(req, res) {
@@ -72,9 +158,9 @@ async function handleResponseRequest(req, res) {
     totalPages,
     pageText,
     question,
-    studentAnswer,
     pdfName,
     previousPageSummary,
+    chatHistory,
   } = payload;
 
   if (!mode || !pageNumber || !pageText) {
@@ -98,13 +184,13 @@ async function handleResponseRequest(req, res) {
     pageText,
     "",
     "Task:",
-    buildTaskPrompt({ mode, question, studentAnswer, pageNumber }),
+    buildTaskPrompt({ mode, question, pageNumber }),
   ]
     .filter(Boolean)
     .join("\n");
 
   try {
-    const apiRes = await fetch(`${API_BASE_URL}/responses`, {
+    const apiRes = await fetch(`${API_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -112,69 +198,126 @@ async function handleResponseRequest(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        input: [
-          {
-            role: "system",
-            content: [{ type: "input_text", text: systemPrompt }],
-          },
-          {
-            role: "user",
-            content: [{ type: "input_text", text: userPrompt }],
-          },
+        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...(Array.isArray(chatHistory)
+            ? chatHistory.map((m) => ({ role: m.role, content: m.text }))
+            : []),
+          { role: "user", content: userPrompt },
         ],
       }),
     });
 
-    const responseJson = await apiRes.json();
-
     if (!apiRes.ok) {
+      const responseJson = await apiRes.json();
       sendJson(res, apiRes.status, {
         error: responseJson?.error?.message || "xAI request failed.",
       });
       return;
     }
 
-    const text = extractOutputText(responseJson);
-    sendJson(res, 200, { text });
+    if (!apiRes.body) {
+      sendJson(res, 502, { error: "xAI returned no response body." });
+      return;
+    }
+
+    const upstreamContentType = apiRes.headers.get("content-type") || "";
+
+    if (upstreamContentType.includes("application/json")) {
+      const responseJson = await apiRes.json();
+      const text = extractCompletionText(responseJson);
+      openSse(res);
+      await streamTextFallback(res, text || "No response text returned.");
+      return;
+    }
+
+    openSse(res);
+
+    const decoder = new TextDecoder();
+    let finalText = "";
+    const parseSse = createSseParser((eventName, rawData) => {
+      if (!rawData) {
+        return;
+      }
+
+      if (rawData === "[DONE]") {
+        writeSse(res, "done", { text: finalText.trim() });
+        return;
+      }
+
+      let eventData;
+      try {
+        eventData = JSON.parse(rawData);
+      } catch {
+        return;
+      }
+
+      const eventType = eventData.type || eventName;
+      const deltaText = eventData.choices?.[0]?.delta?.content;
+
+      if (
+        (eventData.object === "chat.completion.chunk" || eventType === "chat.completion.chunk") &&
+        typeof deltaText === "string" &&
+        deltaText
+      ) {
+        finalText += deltaText;
+        writeSse(res, "delta", { delta: deltaText });
+        return;
+      }
+
+      const completedText =
+        typeof eventData.choices?.[0]?.message?.content === "string"
+          ? eventData.choices[0].message.content
+          : "";
+
+      if (completedText) {
+        if (completedText && !finalText) {
+          finalText = completedText;
+          writeSse(res, "delta", { delta: completedText });
+        }
+        writeSse(res, "done", { text: finalText.trim() });
+        return;
+      }
+
+      if (eventType === "error" || eventData.error) {
+        writeSse(res, "error", {
+          error: eventData.error?.message || "xAI streaming request failed.",
+        });
+      }
+    });
+
+    for await (const chunk of apiRes.body) {
+      parseSse(decoder.decode(chunk, { stream: true }));
+    }
+
+    parseSse(decoder.decode(), { flush: true });
+    if (!res.writableEnded) {
+      writeSse(res, "done", { text: finalText.trim() });
+      res.end();
+    }
   } catch (error) {
-    sendJson(res, 500, {
+    if (!res.headersSent) {
+      sendJson(res, 500, {
+        error: error instanceof Error ? error.message : "Unknown server error.",
+      });
+      return;
+    }
+
+    writeSse(res, "error", {
       error: error instanceof Error ? error.message : "Unknown server error.",
     });
+    res.end();
   }
 }
 
-function buildTaskPrompt({ mode, question, studentAnswer, pageNumber }) {
+function buildTaskPrompt({ mode, question, pageNumber }) {
   if (mode === "explain-simple") {
     return [
       `Explain page ${pageNumber} in plain English.`,
       "Keep it concise.",
       "Include: main idea, key terms, and why this page matters.",
       "End with one short comprehension check question.",
-    ].join(" ");
-  }
-
-  if (mode === "go-deeper") {
-    return [
-      `Teach page ${pageNumber} in more depth.`,
-      "Highlight assumptions, notation, and any derivation or logical step that is easy to miss.",
-      "Call out 1-2 common misunderstandings.",
-    ].join(" ");
-  }
-
-  if (mode === "quiz") {
-    return [
-      `Ask exactly one question about page ${pageNumber}.`,
-      "Use the page content only.",
-      "After the question, add a short 'What a strong answer should include' rubric.",
-      "Do not reveal the full answer yet.",
-    ].join(" ");
-  }
-
-  if (mode === "feedback") {
-    return [
-      `Evaluate the student's answer to a quiz on page ${pageNumber}.`,
-      `Student answer: ${studentAnswer || "(empty)"}`,
-      "Give: verdict, what they got right, what they missed, and a corrected ideal answer grounded in the page.",
     ].join(" ");
   }
 
@@ -195,7 +338,7 @@ async function serveStatic(req, res) {
   try {
     const file = await readFile(filePath);
     const mimeType = MIME_TYPES[extname(filePath)] || "application/octet-stream";
-    res.writeHead(200, { "Content-Type": mimeType });
+    res.writeHead(200, { "Content-Type": mimeType, "Cache-Control": "no-store" });
     res.end(file);
   } catch {
     sendJson(res, 404, { error: "Not found." });

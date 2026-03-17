@@ -61,40 +61,26 @@
 
           <div class="quick-actions">
             <button data-mode="explain-simple" disabled>Explain Simply</button>
-            <button data-mode="go-deeper" disabled>Go Deeper</button>
-            <button data-mode="quiz" disabled>Quiz Me</button>
           </div>
 
           <div class="response-meta">
             <span id="response-status" class="response-status" data-tone="neutral">Upload a PDF to begin</span>
-            <button id="copy-response" type="button" class="ghost" disabled>Copy</button>
           </div>
 
-          <div id="response-output" class="response-output empty">
-            Upload a PDF, then choose an action.
+          <div id="chat-log" class="chat-log">
+            <p class="chat-empty">Upload a PDF, then choose an action or ask a question.</p>
           </div>
 
-          <form id="question-form" class="ask-form">
-            <label for="page-question">Ask about this page</label>
+          <form id="question-form" class="chat-input-row">
             <textarea
               id="page-question"
-              rows="4"
-              placeholder="What does this derivation assume?"
+              rows="2"
+              placeholder="Ask about this page…"
               disabled
             ></textarea>
-            <button type="submit" disabled>Ask Question</button>
+            <button type="submit" disabled>Send</button>
           </form>
 
-          <form id="feedback-form" class="ask-form">
-            <label for="student-answer">Answer the quiz</label>
-            <textarea
-              id="student-answer"
-              rows="4"
-              placeholder="Write your answer here after clicking Quiz Me."
-              disabled
-            ></textarea>
-            <button type="submit" disabled>Get Feedback</button>
-          </form>
         </section>
       </main>
     </div>

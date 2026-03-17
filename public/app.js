@@ -6,8 +6,8 @@ const state = {
   currentPage: 1,
   currentPageText: "",
   previousPageSummary: "",
-  latestQuizPrompt: "",
   isLoading: false,
+  chatHistory: [], // { role: "user"|"assistant", text: string }[]
 };
 
 const elements = {
@@ -19,16 +19,12 @@ const elements = {
   prevPage: document.querySelector("#prev-page"),
   nextPage: document.querySelector("#next-page"),
   canvas: document.querySelector("#pdf-canvas"),
-  responseOutput: document.querySelector("#response-output"),
+  chatLog: document.querySelector("#chat-log"),
   responseStatus: document.querySelector("#response-status"),
-  copyResponseButton: document.querySelector("#copy-response"),
   quickButtons: Array.from(document.querySelectorAll("[data-mode]")),
   questionForm: document.querySelector("#question-form"),
   questionInput: document.querySelector("#page-question"),
-  feedbackForm: document.querySelector("#feedback-form"),
-  feedbackInput: document.querySelector("#student-answer"),
   questionButton: document.querySelector("#question-form button"),
-  feedbackButton: document.querySelector("#feedback-form button"),
 };
 
 const canvasContext = elements.canvas.getContext("2d");
@@ -36,9 +32,33 @@ const canvasContext = elements.canvas.getContext("2d");
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.3.136/pdf.worker.min.mjs";
 
-function setOutput(text, { empty = false } = {}) {
-  elements.responseOutput.innerHTML = renderMarkdown(text);
-  elements.responseOutput.classList.toggle("empty", empty);
+function clearChat() {
+  elements.chatLog.innerHTML = '<p class="chat-empty">Choose an action or ask a question.</p>';
+}
+
+function appendUserBubble(text) {
+  const empty = elements.chatLog.querySelector(".chat-empty");
+  if (empty) empty.remove();
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble chat-bubble--user";
+  bubble.textContent = text;
+  elements.chatLog.appendChild(bubble);
+  elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
+  return bubble;
+}
+
+function appendAssistantBubble() {
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble chat-bubble--assistant";
+  elements.chatLog.appendChild(bubble);
+  elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
+  return bubble;
+}
+
+function updateAssistantBubble(bubble, text) {
+  bubble.innerHTML = renderMarkdown(text);
+  elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
 }
 
 function setResponseStatus(text, tone = "neutral") {
@@ -67,37 +87,78 @@ function renderMarkdown(input) {
   const lines = escapeHtml(input).split("\n");
   const html = [];
   let listType = null;
+  let inCodeBlock = false;
+  let codeLang = "";
+  let codeLines = [];
+
+  function closeList() {
+    if (listType) {
+      html.push(`</${listType}>`);
+      listType = null;
+    }
+  }
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (!line) {
-      if (listType) {
-        html.push(`</${listType}>`);
-        listType = null;
+    // Fenced code blocks
+    if (rawLine.trimStart().startsWith("```")) {
+      if (!inCodeBlock) {
+        closeList();
+        inCodeBlock = true;
+        codeLang = rawLine.trim().slice(3).trim();
+        codeLines = [];
+      } else {
+        const langAttr = codeLang ? ` class="language-${escapeHtml(codeLang)}"` : "";
+        html.push(`<pre><code${langAttr}>${codeLines.join("\n")}</code></pre>`);
+        inCodeBlock = false;
+        codeLines = [];
+        codeLang = "";
       }
       continue;
     }
 
-    const orderedMatch = line.match(/^\d+\.\s+/);
-    const isUnordered = line.startsWith("- ") || line.startsWith("* ");
+    if (inCodeBlock) {
+      codeLines.push(rawLine);
+      continue;
+    }
 
-    if (line.startsWith("### ") || line.startsWith("## ") || line.startsWith("# ")) {
-      if (listType) {
-        html.push(`</${listType}>`);
-        listType = null;
-      }
+    const line = rawLine.trim();
+
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^[-*_]{3,}$/.test(line)) {
+      closeList();
+      html.push("<hr>");
+      continue;
+    }
+
+    // Headings
+    if (line.startsWith("# ") || line.startsWith("## ") || line.startsWith("### ")) {
+      closeList();
       const level = line.startsWith("### ") ? "h3" : line.startsWith("## ") ? "h2" : "h1";
       const offset = level === "h3" ? 4 : level === "h2" ? 3 : 2;
       html.push(`<${level}>${applyInlineMarkdown(line.slice(offset))}</${level}>`);
       continue;
     }
 
+    // Blockquote
+    if (line.startsWith("> ")) {
+      closeList();
+      html.push(`<blockquote><p>${applyInlineMarkdown(line.slice(2))}</p></blockquote>`);
+      continue;
+    }
+
+    // Lists
+    const orderedMatch = line.match(/^\d+\.\s+/);
+    const isUnordered = line.startsWith("- ") || line.startsWith("* ");
+
     if (isUnordered || orderedMatch) {
       const nextListType = isUnordered ? "ul" : "ol";
       if (listType && listType !== nextListType) {
-        html.push(`</${listType}>`);
-        listType = null;
+        closeList();
       }
       if (!listType) {
         html.push(`<${nextListType}>`);
@@ -108,17 +169,15 @@ function renderMarkdown(input) {
       continue;
     }
 
-    if (listType) {
-      html.push(`</${listType}>`);
-      listType = null;
-    }
-
+    closeList();
     html.push(`<p>${applyInlineMarkdown(line)}</p>`);
   }
 
-  if (listType) {
-    html.push(`</${listType}>`);
+  // Close anything left open
+  if (inCodeBlock) {
+    html.push(`<pre><code>${codeLines.join("\n")}</code></pre>`);
   }
+  closeList();
 
   return html.join("\n");
 }
@@ -130,13 +189,80 @@ function setControlsEnabled(enabled) {
 
   const interactiveEnabled = enabled && !state.isLoading;
   elements.questionInput.disabled = !interactiveEnabled;
-  elements.feedbackInput.disabled = !interactiveEnabled;
   elements.questionButton.disabled = !interactiveEnabled;
-  elements.feedbackButton.disabled = !interactiveEnabled;
   elements.prevPage.disabled = !interactiveEnabled || state.currentPage <= 1;
   elements.nextPage.disabled =
     !interactiveEnabled || state.currentPage >= (state.pdfDoc?.numPages || 0);
-  elements.copyResponseButton.disabled = elements.responseOutput.classList.contains("empty");
+}
+
+function createSseParser(onEvent) {
+  let buffer = "";
+
+  return (chunk, { flush = false } = {}) => {
+    buffer += chunk.replaceAll("\r\n", "\n");
+
+    while (true) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary === -1) {
+        break;
+      }
+
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+
+      const lines = rawEvent.split("\n");
+      let eventName = "message";
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+
+      if (!dataLines.length) {
+        continue;
+      }
+
+      try {
+        onEvent(eventName, JSON.parse(dataLines.join("\n")));
+      } catch {
+        continue;
+      }
+    }
+
+    if (flush) {
+      const remainder = buffer.trim();
+      buffer = "";
+      if (!remainder) {
+        return;
+      }
+
+      const lines = remainder.split("\n");
+      let eventName = "message";
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+
+      if (!dataLines.length) {
+        return;
+      }
+
+      try {
+        onEvent(eventName, JSON.parse(dataLines.join("\n")));
+      } catch {
+        return;
+      }
+    }
+  };
 }
 
 function updateProgress() {
@@ -155,7 +281,7 @@ async function loadPdf(file) {
   state.pdfName = file.name;
   state.currentPage = 1;
   state.previousPageSummary = "";
-  state.latestQuizPrompt = "";
+  state.chatHistory = [];
   elements.pdfName.textContent = file.name;
   await renderCurrentPage();
 }
@@ -187,31 +313,30 @@ async function renderCurrentPage() {
   elements.pageIndicator.textContent = `${state.currentPage} / ${state.pdfDoc.numPages}`;
   elements.pageStatus.textContent = `Showing page ${state.currentPage}`;
   updateProgress();
-  setOutput("Choose Explain Simply, Go Deeper, Quiz Me, or ask your own question.", {
-    empty: true,
-  });
+  state.chatHistory = [];
+  clearChat();
   setResponseStatus("Ready", "success");
   setControlsEnabled(true);
 }
 
 async function requestLectureAction(mode, extras = {}) {
   if (!state.currentPageText) {
-    setOutput("This page does not contain extractable text.", { empty: true });
-    setResponseStatus("No extractable text", "warning");
+    setResponseStatus("No extractable text on this page", "warning");
     return;
   }
 
+  const userLabel = mode === "explain-simple" ? "Explain this page simply." : extras.question || "";
+  if (userLabel) appendUserBubble(userLabel);
+  const assistantBubble = appendAssistantBubble();
+
   state.isLoading = true;
   setControlsEnabled(true);
-  setResponseStatus("Thinking", "loading");
-  setOutput("Thinking through the current page...");
+  setResponseStatus("Streaming response…", "loading");
 
   try {
     const response = await fetch("/api/respond", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         mode,
         pageNumber: state.currentPage,
@@ -219,54 +344,97 @@ async function requestLectureAction(mode, extras = {}) {
         pageText: state.currentPageText,
         pdfName: state.pdfName,
         previousPageSummary: state.previousPageSummary,
+        chatHistory: state.chatHistory,
         ...extras,
       }),
     });
 
-    const payload = await response.json();
     if (!response.ok) {
-      setOutput(payload.error || "Request failed.");
+      const payload = await response.json();
+      updateAssistantBubble(assistantBubble, payload.error || "Request failed.");
       setResponseStatus("Request failed", "warning");
       return;
     }
 
-    const text = payload.text || "No response text returned.";
-    setOutput(text);
-    setResponseStatus("Ready", "success");
+    const contentType = response.headers.get("content-type") || "";
 
-    if (mode === "quiz") {
-      state.latestQuizPrompt = text;
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      const text = payload.text || "No response text returned.";
+      updateAssistantBubble(assistantBubble, text);
+      setResponseStatus("Ready", "success");
+      if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
+      state.chatHistory.push({ role: "assistant", text });
+      if (mode === "explain-simple") state.previousPageSummary = text.slice(0, 600);
+      return;
     }
 
-    if (mode === "explain-simple") {
-      state.previousPageSummary = text.slice(0, 600);
+    if (!response.body) {
+      updateAssistantBubble(assistantBubble, "The server did not return a readable response body.");
+      setResponseStatus("No response body", "warning");
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    let completed = false;
+    let rafPending = false;
+
+    function flushToDOM() {
+      rafPending = false;
+      updateAssistantBubble(assistantBubble, text);
+    }
+
+    const parseSse = createSseParser((eventName, data) => {
+      if (eventName === "delta" && typeof data.delta === "string") {
+        text += data.delta;
+        if (!rafPending) {
+          rafPending = true;
+          requestAnimationFrame(flushToDOM);
+        }
+        return;
+      }
+
+      if (eventName === "done") {
+        if (typeof data.text === "string" && !text) text = data.text;
+        updateAssistantBubble(assistantBubble, text);
+        completed = true;
+        setResponseStatus("Ready", "success");
+        if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
+        state.chatHistory.push({ role: "assistant", text });
+        if (mode === "explain-simple") state.previousPageSummary = text.slice(0, 600);
+        return;
+      }
+
+      if (eventName === "error") {
+        const errorText = typeof data.error === "string" ? data.error : "Streaming failed.";
+        updateAssistantBubble(assistantBubble, errorText);
+        setResponseStatus("Streaming failed", "warning");
+      }
+    });
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      parseSse(decoder.decode(value, { stream: true }));
+    }
+
+    parseSse(decoder.decode(), { flush: true });
+
+    if (!completed) {
+      if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
+      if (text) state.chatHistory.push({ role: "assistant", text });
+      setResponseStatus(text ? "Ready" : "No response text returned", text ? "success" : "warning");
     }
   } catch (error) {
-    setOutput(error instanceof Error ? error.message : "Unknown request error.");
+    updateAssistantBubble(assistantBubble, error instanceof Error ? error.message : "Unknown request error.");
     setResponseStatus("Network error", "warning");
   } finally {
     state.isLoading = false;
     setControlsEnabled(true);
   }
 }
-
-elements.copyResponseButton.addEventListener("click", async () => {
-  const text = elements.responseOutput.textContent?.trim();
-  if (!text) {
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(text);
-    const original = elements.copyResponseButton.textContent;
-    elements.copyResponseButton.textContent = "Copied";
-    setTimeout(() => {
-      elements.copyResponseButton.textContent = original;
-    }, 1200);
-  } catch {
-    setResponseStatus("Copy unavailable in this browser", "warning");
-  }
-});
 
 elements.pdfInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -275,14 +443,13 @@ elements.pdfInput.addEventListener("change", async (event) => {
   }
 
   try {
-    setOutput("Loading PDF...", { empty: true });
-    setResponseStatus("Loading PDF", "loading");
+    setResponseStatus("Loading PDF…", "loading");
     await loadPdf(file);
   } catch (error) {
-    setOutput(
+    setResponseStatus(
       error instanceof Error ? `Unable to load this PDF: ${error.message}` : "Unable to load this PDF.",
+      "warning",
     );
-    setResponseStatus("Unable to load PDF", "warning");
   }
 });
 
@@ -302,6 +469,7 @@ elements.nextPage.addEventListener("click", async () => {
 
   state.currentPage += 1;
   await renderCurrentPage();
+  await requestLectureAction("explain-simple");
 });
 
 for (const button of elements.quickButtons) {
@@ -313,27 +481,18 @@ for (const button of elements.quickButtons) {
 elements.questionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const question = elements.questionInput.value.trim();
-  if (!question) {
-    setOutput("Enter a question about the current page.");
-    return;
-  }
-
+  if (!question) return;
+  elements.questionInput.value = "";
   await requestLectureAction("ask", { question });
 });
 
-elements.feedbackForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const studentAnswer = elements.feedbackInput.value.trim();
-  if (!studentAnswer) {
-    setOutput("Write an answer before asking for feedback.");
-    return;
+elements.questionInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    elements.questionForm.requestSubmit();
   }
-
-  await requestLectureAction("feedback", {
-    studentAnswer,
-    question: state.latestQuizPrompt,
-  });
 });
+
 
 window.addEventListener("keydown", async (event) => {
   if (!state.pdfDoc || state.isLoading) {
