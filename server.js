@@ -7,7 +7,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const API_BASE_URL = process.env.XAI_API_BASE_URL || "https://api.x.ai/v1";
-const MODEL = process.env.XAI_MODEL || "grok-4-1-fast-non-reasoning";
+const MODEL = process.env.XAI_MODEL || "grok-4.3";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",

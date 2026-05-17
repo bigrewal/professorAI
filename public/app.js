@@ -436,6 +436,24 @@ async function requestLectureAction(mode, extras = {}) {
   }
 }
 
+async function goToPage(pageNumber, { explain = false } = {}) {
+  if (!state.pdfDoc || state.isLoading) {
+    return;
+  }
+
+  const nextPageNumber = Math.min(Math.max(pageNumber, 1), state.pdfDoc.numPages);
+  if (nextPageNumber === state.currentPage) {
+    return;
+  }
+
+  state.currentPage = nextPageNumber;
+  await renderCurrentPage();
+
+  if (explain) {
+    await requestLectureAction("explain-simple");
+  }
+}
+
 elements.pdfInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) {
@@ -454,22 +472,11 @@ elements.pdfInput.addEventListener("change", async (event) => {
 });
 
 elements.prevPage.addEventListener("click", async () => {
-  if (state.currentPage <= 1 || state.isLoading) {
-    return;
-  }
-
-  state.currentPage -= 1;
-  await renderCurrentPage();
+  await goToPage(state.currentPage - 1);
 });
 
 elements.nextPage.addEventListener("click", async () => {
-  if (!state.pdfDoc || state.currentPage >= state.pdfDoc.numPages || state.isLoading) {
-    return;
-  }
-
-  state.currentPage += 1;
-  await renderCurrentPage();
-  await requestLectureAction("explain-simple");
+  await goToPage(state.currentPage + 1, { explain: true });
 });
 
 for (const button of elements.quickButtons) {
@@ -501,12 +508,12 @@ window.addEventListener("keydown", async (event) => {
 
   if (event.key === "ArrowRight") {
     event.preventDefault();
-    elements.nextPage.click();
+    await goToPage(state.currentPage + 1);
   }
 
   if (event.key === "ArrowLeft") {
     event.preventDefault();
-    elements.prevPage.click();
+    await goToPage(state.currentPage - 1);
   }
 });
 
