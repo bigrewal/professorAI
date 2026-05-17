@@ -352,8 +352,9 @@ async function handleResponseRequest(req, res) {
 function buildTaskPrompt({ mode, question, pageNumber }) {
   if (mode === "explain-simple") {
     return [
-      `Explain page ${pageNumber} in plain English.`,
+      `Explain page ${pageNumber} at the right level for the learner's background.`,
       "Keep it concise.",
+      "Adapt assumptions, examples, and terminology to the learner profile if one is supplied.",
       "Include: main idea, key terms, and why this page matters.",
       "End with one short comprehension check question.",
     ].join(" ");

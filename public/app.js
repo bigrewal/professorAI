@@ -370,7 +370,7 @@ async function requestLectureAction(mode, extras = {}) {
     return;
   }
 
-  const userLabel = mode === "explain-simple" ? "Explain this page simply." : extras.question || "";
+  const userLabel = mode === "explain-simple" ? "Explain this page." : extras.question || "";
   if (userLabel) appendUserBubble(userLabel);
   const assistantBubble = appendAssistantBubble();
 
