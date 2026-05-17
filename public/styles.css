@@ -75,6 +75,7 @@ h2 {
 }
 
 .upload-card,
+.profile-card,
 .meta-card,
 .viewer-panel,
 .lecture-panel {
@@ -92,17 +93,44 @@ h2 {
   cursor: pointer;
 }
 
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.1rem;
+}
+
 .upload-card input {
   margin-top: 0.35rem;
 }
 
-.upload-title {
+.upload-title,
+.profile-title {
   font-weight: 700;
 }
 
-.upload-hint {
+.upload-hint,
+.profile-hint {
   color: var(--muted);
   line-height: 1.4;
+}
+
+.profile-card textarea {
+  min-height: 6rem;
+  resize: vertical;
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+}
+
+.profile-count {
+  align-self: flex-end;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.profile-count[data-tone="warning"] {
+  color: var(--warning);
+  font-weight: 700;
 }
 
 .meta-card {

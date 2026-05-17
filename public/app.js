@@ -5,7 +5,8 @@ const state = {
   pdfName: "",
   currentPage: 1,
   currentPageText: "",
-  previousPageSummary: "",
+  pageTextCache: new Map(),
+  pageSummaries: new Map(),
   isLoading: false,
   chatHistory: [], // { role: "user"|"assistant", text: string }[]
 };
@@ -21,6 +22,8 @@ const elements = {
   canvas: document.querySelector("#pdf-canvas"),
   chatLog: document.querySelector("#chat-log"),
   responseStatus: document.querySelector("#response-status"),
+  learnerProfile: document.querySelector("#learner-profile"),
+  learnerProfileCount: document.querySelector("#learner-profile-count"),
   quickButtons: Array.from(document.querySelectorAll("[data-mode]")),
   questionForm: document.querySelector("#question-form"),
   questionInput: document.querySelector("#page-question"),
@@ -64,6 +67,24 @@ function updateAssistantBubble(bubble, text) {
 function setResponseStatus(text, tone = "neutral") {
   elements.responseStatus.textContent = text;
   elements.responseStatus.dataset.tone = tone;
+}
+
+function countWords(text) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function getLearnerProfile() {
+  return elements.learnerProfile.value.trim().replace(/\s+/g, " ");
+}
+
+function updateLearnerProfileCount() {
+  const wordCount = countWords(elements.learnerProfile.value);
+  elements.learnerProfileCount.textContent = `${wordCount}/50 words`;
+  elements.learnerProfileCount.dataset.tone = wordCount > 50 ? "warning" : "neutral";
+}
+
+function isTypingTarget(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
 function escapeHtml(value) {
@@ -280,10 +301,32 @@ async function loadPdf(file) {
   state.pdfDoc = await loadingTask.promise;
   state.pdfName = file.name;
   state.currentPage = 1;
-  state.previousPageSummary = "";
+  state.pageTextCache = new Map();
+  state.pageSummaries = new Map();
   state.chatHistory = [];
   elements.pdfName.textContent = file.name;
   await renderCurrentPage();
+}
+
+async function getPageText(pageNumber) {
+  if (!state.pdfDoc || pageNumber < 1 || pageNumber > state.pdfDoc.numPages) {
+    return "";
+  }
+
+  if (state.pageTextCache.has(pageNumber)) {
+    return state.pageTextCache.get(pageNumber);
+  }
+
+  const page = await state.pdfDoc.getPage(pageNumber);
+  const content = await page.getTextContent();
+  const pageText = content.items
+    .map((item) => item.str)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  state.pageTextCache.set(pageNumber, pageText);
+  return pageText;
 }
 
 async function renderCurrentPage() {
@@ -303,12 +346,7 @@ async function renderCurrentPage() {
   canvasContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
   await page.render({ canvasContext, viewport }).promise;
 
-  const content = await page.getTextContent();
-  state.currentPageText = content.items
-    .map((item) => item.str)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  state.currentPageText = await getPageText(state.currentPage);
 
   elements.pageIndicator.textContent = `${state.currentPage} / ${state.pdfDoc.numPages}`;
   elements.pageStatus.textContent = `Showing page ${state.currentPage}`;
@@ -325,6 +363,13 @@ async function requestLectureAction(mode, extras = {}) {
     return;
   }
 
+  const learnerProfile = getLearnerProfile();
+  if (countWords(learnerProfile) > 50) {
+    setResponseStatus("Keep your background to 50 words or less", "warning");
+    elements.learnerProfile.focus();
+    return;
+  }
+
   const userLabel = mode === "explain-simple" ? "Explain this page simply." : extras.question || "";
   if (userLabel) appendUserBubble(userLabel);
   const assistantBubble = appendAssistantBubble();
@@ -334,6 +379,12 @@ async function requestLectureAction(mode, extras = {}) {
   setResponseStatus("Streaming response…", "loading");
 
   try {
+    const previousPageNumber = state.currentPage - 1;
+    const previousPageText =
+      previousPageNumber >= 1 && mode === "explain-simple"
+        ? await getPageText(previousPageNumber)
+        : "";
+
     const response = await fetch("/api/respond", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -343,7 +394,10 @@ async function requestLectureAction(mode, extras = {}) {
         totalPages: state.pdfDoc?.numPages || null,
         pageText: state.currentPageText,
         pdfName: state.pdfName,
-        previousPageSummary: state.previousPageSummary,
+        learnerProfile,
+        previousPageNumber: previousPageText ? previousPageNumber : null,
+        previousPageText,
+        previousPageSummary: state.pageSummaries.get(previousPageNumber) || "",
         chatHistory: state.chatHistory,
         ...extras,
       }),
@@ -365,7 +419,7 @@ async function requestLectureAction(mode, extras = {}) {
       setResponseStatus("Ready", "success");
       if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
       state.chatHistory.push({ role: "assistant", text });
-      if (mode === "explain-simple") state.previousPageSummary = text.slice(0, 600);
+      if (mode === "explain-simple") state.pageSummaries.set(state.currentPage, text.slice(0, 600));
       return;
     }
 
@@ -403,7 +457,7 @@ async function requestLectureAction(mode, extras = {}) {
         setResponseStatus("Ready", "success");
         if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
         state.chatHistory.push({ role: "assistant", text });
-        if (mode === "explain-simple") state.previousPageSummary = text.slice(0, 600);
+        if (mode === "explain-simple") state.pageSummaries.set(state.currentPage, text.slice(0, 600));
         return;
       }
 
@@ -425,6 +479,7 @@ async function requestLectureAction(mode, extras = {}) {
     if (!completed) {
       if (userLabel) state.chatHistory.push({ role: "user", text: userLabel });
       if (text) state.chatHistory.push({ role: "assistant", text });
+      if (mode === "explain-simple" && text) state.pageSummaries.set(state.currentPage, text.slice(0, 600));
       setResponseStatus(text ? "Ready" : "No response text returned", text ? "success" : "warning");
     }
   } catch (error) {
@@ -435,6 +490,8 @@ async function requestLectureAction(mode, extras = {}) {
     setControlsEnabled(true);
   }
 }
+
+elements.learnerProfile.addEventListener("input", updateLearnerProfileCount);
 
 async function goToPage(pageNumber, { explain = false } = {}) {
   if (!state.pdfDoc || state.isLoading) {
@@ -502,7 +559,7 @@ elements.questionInput.addEventListener("keydown", (event) => {
 
 
 window.addEventListener("keydown", async (event) => {
-  if (!state.pdfDoc || state.isLoading) {
+  if (!state.pdfDoc || state.isLoading || isTypingTarget(event.target)) {
     return;
   }
 
@@ -519,4 +576,5 @@ window.addEventListener("keydown", async (event) => {
 
 setControlsEnabled(false);
 setResponseStatus("Upload a PDF to begin", "neutral");
+updateLearnerProfileCount();
 updateProgress();

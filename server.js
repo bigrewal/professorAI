@@ -131,6 +131,27 @@ function createSseParser(onEvent) {
   };
 }
 
+function normalizeLearnerProfile(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().split(/\s+/).filter(Boolean).slice(0, 50).join(" ");
+}
+
+function excerptText(value, maxLength = 1800) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const text = value.trim().replace(/\s+/g, " ");
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength).trim()}...`;
+}
+
 async function handleResponseRequest(req, res) {
   if (!XAI_API_KEY) {
     sendJson(res, 500, {
@@ -159,6 +180,9 @@ async function handleResponseRequest(req, res) {
     pageText,
     question,
     pdfName,
+    learnerProfile,
+    previousPageNumber,
+    previousPageText,
     previousPageSummary,
     chatHistory,
   } = payload;
@@ -170,16 +194,30 @@ async function handleResponseRequest(req, res) {
     return;
   }
 
+  const normalizedLearnerProfile = normalizeLearnerProfile(learnerProfile);
+  const previousContext = [
+    previousPageSummary ? `Previous page explanation summary: ${excerptText(previousPageSummary, 700)}` : "",
+    previousPageText
+      ? `Previous page ${previousPageNumber || pageNumber - 1} text excerpt: ${excerptText(previousPageText)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const systemPrompt =
     "You are an expert course instructor teaching from lecture notes. " +
     "Stay grounded in the supplied page text and the visible page number. " +
+    "Use any supplied learner background to tune pacing, assumptions, examples, and vocabulary. " +
+    "Use previous-page context only to connect the current page to what came immediately before; do not let it override the current page. " +
     "If a user asks for something not supported by the page, say that clearly and mark any extra background as outside the notes. " +
     "Keep explanations crisp, use bullets when helpful, and preserve mathematical precision.";
 
   const userPrompt = [
     `PDF: ${pdfName || "Untitled lecture notes"}`,
     `Current page: ${pageNumber} of ${totalPages || "unknown"}`,
-    previousPageSummary ? `Previous page summary: ${previousPageSummary}` : "",
+    normalizedLearnerProfile ? `Learner background: ${normalizedLearnerProfile}` : "",
+    previousContext ? "Context from the immediately previous page:" : "",
+    previousContext,
     "Current page text:",
     pageText,
     "",
