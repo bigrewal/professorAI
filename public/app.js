@@ -1,8 +1,10 @@
 import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.3.136/pdf.min.mjs";
 
 const state = {
+  documentType: "",
   pdfDoc: null,
   pdfName: "",
+  textPages: [],
   currentPage: 1,
   currentPageText: "",
   pageTextCache: new Map(),
@@ -20,6 +22,7 @@ const elements = {
   prevPage: document.querySelector("#prev-page"),
   nextPage: document.querySelector("#next-page"),
   canvas: document.querySelector("#pdf-canvas"),
+  textPage: document.querySelector("#text-page"),
   chatLog: document.querySelector("#chat-log"),
   responseStatus: document.querySelector("#response-status"),
   learnerProfile: document.querySelector("#learner-profile"),
@@ -34,6 +37,46 @@ const canvasContext = elements.canvas.getContext("2d");
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.3.136/pdf.worker.min.mjs";
+
+const modeLabels = {
+  "explain-simple": "Explain this page at my level.",
+};
+
+let mammothScriptPromise = null;
+
+function ensureMammothLoaded() {
+  if (window.mammoth?.extractRawText) {
+    return Promise.resolve();
+  }
+
+  if (!mammothScriptPromise) {
+    mammothScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("DOCX parser did not load. Check your connection and try again."));
+      document.head.appendChild(script);
+    });
+  }
+
+  return mammothScriptPromise;
+}
+
+function getTotalPages() {
+  if (state.documentType === "pdf") {
+    return state.pdfDoc?.numPages || 0;
+  }
+
+  if (state.documentType === "text") {
+    return state.textPages.length;
+  }
+
+  return 0;
+}
+
+function hasDocument() {
+  return getTotalPages() > 0;
+}
 
 function clearChat() {
   elements.chatLog.innerHTML = '<p class="chat-empty">Choose an action or ask a question.</p>';
@@ -204,6 +247,7 @@ function renderMarkdown(input) {
 }
 
 function setControlsEnabled(enabled) {
+  const totalPages = getTotalPages();
   for (const button of elements.quickButtons) {
     button.disabled = !enabled || state.isLoading;
   }
@@ -212,8 +256,7 @@ function setControlsEnabled(enabled) {
   elements.questionInput.disabled = !interactiveEnabled;
   elements.questionButton.disabled = !interactiveEnabled;
   elements.prevPage.disabled = !interactiveEnabled || state.currentPage <= 1;
-  elements.nextPage.disabled =
-    !interactiveEnabled || state.currentPage >= (state.pdfDoc?.numPages || 0);
+  elements.nextPage.disabled = !interactiveEnabled || state.currentPage >= totalPages;
 }
 
 function createSseParser(onEvent) {
@@ -287,34 +330,138 @@ function createSseParser(onEvent) {
 }
 
 function updateProgress() {
-  if (!state.pdfDoc) {
+  const totalPages = getTotalPages();
+  if (!totalPages) {
     elements.pageProgressFill.style.width = "0%";
     return;
   }
-  const progress = (state.currentPage / state.pdfDoc.numPages) * 100;
+  const progress = (state.currentPage / totalPages) * 100;
   elements.pageProgressFill.style.width = `${progress}%`;
 }
 
-async function loadPdf(file) {
-  const buffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: buffer });
-  state.pdfDoc = await loadingTask.promise;
-  state.pdfName = file.name;
+function resetDocumentState(fileName, documentType) {
+  state.documentType = documentType;
+  state.pdfDoc = null;
+  state.pdfName = fileName;
+  state.textPages = [];
   state.currentPage = 1;
+  state.currentPageText = "";
   state.pageTextCache = new Map();
   state.pageSummaries = new Map();
   state.chatHistory = [];
-  elements.pdfName.textContent = file.name;
+  elements.pdfName.textContent = fileName;
+}
+
+function paginateText(text, maxChars = 2600) {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const pages = [];
+  let current = "";
+
+  for (const paragraph of normalized.split(/\n\s*\n/)) {
+    const block = paragraph.trim();
+    if (!block) {
+      continue;
+    }
+
+    if (current && `${current}\n\n${block}`.length > maxChars) {
+      pages.push(current);
+      current = "";
+    }
+
+    if (block.length > maxChars) {
+      const sentences = block.match(/[^.!?]+[.!?]+|\S.+$/g) || [block];
+      for (const sentence of sentences) {
+        const next = current ? `${current} ${sentence.trim()}` : sentence.trim();
+        if (current && next.length > maxChars) {
+          pages.push(current);
+          current = sentence.trim();
+        } else {
+          current = next;
+        }
+      }
+      continue;
+    }
+
+    current = current ? `${current}\n\n${block}` : block;
+  }
+
+  if (current) {
+    pages.push(current);
+  }
+
+  return pages;
+}
+
+async function loadPdf(file) {
+  resetDocumentState(file.name, "pdf");
+  const buffer = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({ data: buffer });
+  state.pdfDoc = await loadingTask.promise;
   await renderCurrentPage();
 }
 
+async function loadTextDocument(file) {
+  const extension = file.name.toLowerCase().split(".").pop();
+  let text = "";
+
+  if (extension === "doc") {
+    throw new Error("Legacy .doc files are not supported yet. Save as .docx or export to PDF/TXT.");
+  }
+
+  resetDocumentState(file.name, "text");
+
+  if (extension === "docx") {
+    await ensureMammothLoaded();
+    if (!window.mammoth?.extractRawText) {
+      throw new Error("DOCX parser did not load. Check your connection and try again.");
+    }
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    text = result.value || "";
+  } else {
+    text = await file.text();
+  }
+
+  state.textPages = paginateText(text);
+  if (!state.textPages.length) {
+    throw new Error("No readable text was found in this file.");
+  }
+
+  await renderCurrentPage();
+}
+
+async function loadDocument(file) {
+  const extension = file.name.toLowerCase().split(".").pop();
+  if (file.type === "application/pdf" || extension === "pdf") {
+    await loadPdf(file);
+    return;
+  }
+
+  if (["txt", "md", "markdown", "docx", "doc"].includes(extension) || file.type.startsWith("text/")) {
+    await loadTextDocument(file);
+    return;
+  }
+
+  throw new Error("Unsupported file type. Upload a PDF, DOCX, TXT, or Markdown file.");
+}
+
 async function getPageText(pageNumber) {
-  if (!state.pdfDoc || pageNumber < 1 || pageNumber > state.pdfDoc.numPages) {
+  const totalPages = getTotalPages();
+  if (!hasDocument() || pageNumber < 1 || pageNumber > totalPages) {
     return "";
   }
 
   if (state.pageTextCache.has(pageNumber)) {
     return state.pageTextCache.get(pageNumber);
+  }
+
+  if (state.documentType === "text") {
+    const pageText = state.textPages[pageNumber - 1] || "";
+    state.pageTextCache.set(pageNumber, pageText);
+    return pageText;
   }
 
   const page = await state.pdfDoc.getPage(pageNumber);
@@ -330,26 +477,35 @@ async function getPageText(pageNumber) {
 }
 
 async function renderCurrentPage() {
-  if (!state.pdfDoc) {
+  if (!hasDocument()) {
     return;
   }
 
-  const page = await state.pdfDoc.getPage(state.currentPage);
-  const viewport = page.getViewport({ scale: 1.25 });
-  const outputScale = window.devicePixelRatio || 1;
+  if (state.documentType === "pdf") {
+    elements.canvas.hidden = false;
+    elements.textPage.hidden = true;
+    const page = await state.pdfDoc.getPage(state.currentPage);
+    const viewport = page.getViewport({ scale: 1.25 });
+    const outputScale = window.devicePixelRatio || 1;
 
-  elements.canvas.width = Math.floor(viewport.width * outputScale);
-  elements.canvas.height = Math.floor(viewport.height * outputScale);
-  elements.canvas.style.width = `${viewport.width}px`;
-  elements.canvas.style.height = `${viewport.height}px`;
+    elements.canvas.width = Math.floor(viewport.width * outputScale);
+    elements.canvas.height = Math.floor(viewport.height * outputScale);
+    elements.canvas.style.width = `${viewport.width}px`;
+    elements.canvas.style.height = `${viewport.height}px`;
 
-  canvasContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-  await page.render({ canvasContext, viewport }).promise;
+    canvasContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+    await page.render({ canvasContext, viewport }).promise;
+  } else {
+    elements.canvas.hidden = true;
+    elements.textPage.hidden = false;
+    elements.textPage.textContent = state.textPages[state.currentPage - 1] || "";
+  }
 
   state.currentPageText = await getPageText(state.currentPage);
 
-  elements.pageIndicator.textContent = `${state.currentPage} / ${state.pdfDoc.numPages}`;
-  elements.pageStatus.textContent = `Showing page ${state.currentPage}`;
+  elements.pageIndicator.textContent = `${state.currentPage} / ${getTotalPages()}`;
+  elements.pageStatus.textContent =
+    state.documentType === "pdf" ? `Showing page ${state.currentPage}` : `Showing chunk ${state.currentPage}`;
   updateProgress();
   state.chatHistory = [];
   clearChat();
@@ -370,7 +526,7 @@ async function requestLectureAction(mode, extras = {}) {
     return;
   }
 
-  const userLabel = mode === "explain-simple" ? "Explain this page." : extras.question || "";
+  const userLabel = modeLabels[mode] || extras.question || "";
   if (userLabel) appendUserBubble(userLabel);
   const assistantBubble = appendAssistantBubble();
 
@@ -391,7 +547,8 @@ async function requestLectureAction(mode, extras = {}) {
       body: JSON.stringify({
         mode,
         pageNumber: state.currentPage,
-        totalPages: state.pdfDoc?.numPages || null,
+        totalPages: getTotalPages() || null,
+        documentType: state.documentType,
         pageText: state.currentPageText,
         pdfName: state.pdfName,
         learnerProfile,
@@ -494,11 +651,11 @@ async function requestLectureAction(mode, extras = {}) {
 elements.learnerProfile.addEventListener("input", updateLearnerProfileCount);
 
 async function goToPage(pageNumber, { explain = false } = {}) {
-  if (!state.pdfDoc || state.isLoading) {
+  if (!hasDocument() || state.isLoading) {
     return;
   }
 
-  const nextPageNumber = Math.min(Math.max(pageNumber, 1), state.pdfDoc.numPages);
+  const nextPageNumber = Math.min(Math.max(pageNumber, 1), getTotalPages());
   if (nextPageNumber === state.currentPage) {
     return;
   }
@@ -518,11 +675,11 @@ elements.pdfInput.addEventListener("change", async (event) => {
   }
 
   try {
-    setResponseStatus("Loading PDF…", "loading");
-    await loadPdf(file);
+    setResponseStatus("Loading course material…", "loading");
+    await loadDocument(file);
   } catch (error) {
     setResponseStatus(
-      error instanceof Error ? `Unable to load this PDF: ${error.message}` : "Unable to load this PDF.",
+      error instanceof Error ? `Unable to load this file: ${error.message}` : "Unable to load this file.",
       "warning",
     );
   }
@@ -559,7 +716,7 @@ elements.questionInput.addEventListener("keydown", (event) => {
 
 
 window.addEventListener("keydown", async (event) => {
-  if (!state.pdfDoc || state.isLoading || isTypingTarget(event.target)) {
+  if (!hasDocument() || state.isLoading || isTypingTarget(event.target)) {
     return;
   }
 
@@ -575,6 +732,6 @@ window.addEventListener("keydown", async (event) => {
 });
 
 setControlsEnabled(false);
-setResponseStatus("Upload a PDF to begin", "neutral");
+setResponseStatus("Upload course material to begin", "neutral");
 updateLearnerProfileCount();
 updateProgress();

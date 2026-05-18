@@ -177,6 +177,7 @@ async function handleResponseRequest(req, res) {
     mode,
     pageNumber,
     totalPages,
+    documentType,
     pageText,
     question,
     pdfName,
@@ -195,34 +196,38 @@ async function handleResponseRequest(req, res) {
   }
 
   const normalizedLearnerProfile = normalizeLearnerProfile(learnerProfile);
+  const sourceKind = documentType === "text" ? "chunk" : "page";
   const previousContext = [
-    previousPageSummary ? `Previous page explanation summary: ${excerptText(previousPageSummary, 700)}` : "",
+    previousPageSummary ? `Previous ${sourceKind} explanation summary: ${excerptText(previousPageSummary, 700)}` : "",
     previousPageText
-      ? `Previous page ${previousPageNumber || pageNumber - 1} text excerpt: ${excerptText(previousPageText)}`
+      ? `Previous ${sourceKind} ${previousPageNumber || pageNumber - 1} text excerpt: ${excerptText(previousPageText)}`
       : "",
   ]
     .filter(Boolean)
     .join("\n");
 
   const systemPrompt =
-    "You are an expert course instructor teaching from lecture notes. " +
-    "Stay grounded in the supplied page text and the visible page number. " +
-    "Use any supplied learner background to tune pacing, assumptions, examples, and vocabulary. " +
-    "Use previous-page context only to connect the current page to what came immediately before; do not let it override the current page. " +
-    "If a user asks for something not supported by the page, say that clearly and mark any extra background as outside the notes. " +
-    "Keep explanations crisp, use bullets when helpful, and preserve mathematical precision.";
+    "You are ProfessorAI, a patient but rigorous personal tutor teaching from the learner's uploaded course material. " +
+    "Your goal is genuine understanding, not generic summarization. " +
+    "Stay grounded in the supplied source text and visible source number. " +
+    "Cite the current source when you make a claim from the material, using brief references like (page 3) or (chunk 3). " +
+    "Use any supplied learner background to tune pacing, assumptions, examples, vocabulary, and the amount of prerequisite explanation. " +
+    "Use previous-source context only to connect the current source to what came immediately before; do not let it override the current source. " +
+    "If a user asks for something not supported by the supplied source, say that clearly and mark any extra background as outside the notes. " +
+    "Prefer concrete examples, common mistake warnings, and short comprehension checks. " +
+    "Keep answers focused, useful, and mathematically or technically precise.";
 
   const userPrompt = [
-    `PDF: ${pdfName || "Untitled lecture notes"}`,
-    `Current page: ${pageNumber} of ${totalPages || "unknown"}`,
+    `Course material: ${pdfName || "Untitled course material"}`,
+    `Current ${sourceKind}: ${pageNumber} of ${totalPages || "unknown"}`,
     normalizedLearnerProfile ? `Learner background: ${normalizedLearnerProfile}` : "",
-    previousContext ? "Context from the immediately previous page:" : "",
+    previousContext ? `Context from the immediately previous ${sourceKind}:` : "",
     previousContext,
-    "Current page text:",
+    `Current ${sourceKind} text:`,
     pageText,
     "",
     "Task:",
-    buildTaskPrompt({ mode, question, pageNumber }),
+    buildTaskPrompt({ mode, question, pageNumber, sourceKind }),
   ]
     .filter(Boolean)
     .join("\n");
@@ -349,22 +354,80 @@ async function handleResponseRequest(req, res) {
   }
 }
 
-function buildTaskPrompt({ mode, question, pageNumber }) {
+function buildTaskPrompt({ mode, question, pageNumber, sourceKind = "page" }) {
+  const sourceRef = `${sourceKind} ${pageNumber}`;
+  const sourceSupported = `${sourceKind}-supported`;
+
   if (mode === "explain-simple") {
     return [
-      `Explain page ${pageNumber} at the right level for the learner's background.`,
-      "Keep it concise.",
-      "Adapt assumptions, examples, and terminology to the learner profile if one is supplied.",
-      "Include: main idea, key terms, and why this page matters.",
-      "End with one short comprehension check question.",
+      `Explain ${sourceRef} at the right level for the learner's background.`,
+      "Use this structure:",
+      "1. The main idea in plain language.",
+      "2. Key terms or formulas the learner must understand.",
+      `3. Why this ${sourceKind} matters in the course.`,
+      "4. One tiny example or analogy tailored to the learner.",
+      "5. One short comprehension check question.",
+      `Keep it concise and cite ${sourceSupported} claims.`,
+    ].join(" ");
+  }
+
+  if (mode === "concept-map") {
+    return [
+      `Create a concept map for ${sourceRef}.`,
+      "Use headings for: core idea, prerequisites, supporting concepts, connections, and what to watch for.",
+      "Show dependencies with arrows using plain text, for example A -> B -> C.",
+      `Keep each item short and cite ${sourceSupported} claims.`,
+      "End by naming the single concept the learner should master before moving on.",
+    ].join(" ");
+  }
+
+  if (mode === "worked-example") {
+    return [
+      `Create a worked example that helps the learner understand ${sourceRef}.`,
+      `Base it on the ${sourceKind} content.`,
+      "Use this structure: setup, step-by-step solution or reasoning, why each step is valid, and a quick variation for practice.",
+      `If the ${sourceKind} does not contain enough detail for a worked example, say what is missing and create a minimal source-grounded example.`,
+      `Cite ${sourceSupported} concepts.`,
+    ].join(" ");
+  }
+
+  if (mode === "misconceptions") {
+    return [
+      `Identify common confusions a learner may have about ${sourceRef}.`,
+      "Use this structure: confusion, why it is tempting, correction, and a quick diagnostic question.",
+      `Prioritize misunderstandings suggested by the ${sourceKind} text and the learner profile.`,
+      `Cite ${sourceSupported} corrections.`,
+    ].join(" ");
+  }
+
+  if (mode === "quiz") {
+    return [
+      `Quiz the learner on ${sourceRef}.`,
+      "Create five questions: two recall, two application, and one explanation question.",
+      "Do not reveal the answers immediately.",
+      "After the questions, add a compact answer key hidden under a clear 'Answer key' heading so the learner can self-check after trying.",
+      `Keep questions grounded in the ${sourceKind} and cite the ${sourceKind} in the answer key.`,
+    ].join(" ");
+  }
+
+  if (mode === "study-plan") {
+    return [
+      `Tell the learner what to study next after ${sourceRef}.`,
+      "Use this structure: what they should understand now, weak spots to review, the next best study action, and one short self-test.",
+      `Base the plan on the current ${sourceKind}, previous-${sourceKind} context if supplied, and the learner profile.`,
+      `If prerequisite knowledge is implied but not explained in the ${sourceKind}, label it as prerequisite background.`,
+      `Keep it practical and cite ${sourceSupported} items.`,
     ].join(" ");
   }
 
   return [
-    `Answer the user's question about page ${pageNumber}.`,
+    `Answer the user's question about ${sourceRef}.`,
     `User question: ${question || ""}`,
-    "Stay grounded in the supplied page.",
+    `Stay grounded in the supplied ${sourceKind} and cite ${sourceSupported} claims.`,
+    "Answer directly first, then explain the reasoning.",
+    "If the learner seems confused, rebuild from the smallest prerequisite concept needed.",
     "If the answer needs outside context, label that clearly.",
+    "End with a short check that lets the learner verify they understood.",
   ].join(" ");
 }
 

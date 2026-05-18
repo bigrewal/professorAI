@@ -10,24 +10,24 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div>
-          <p class="eyebrow">Release 1</p>
-          <h1>AI Lecture Mode</h1>
-          <p class="lede">Turn lecture-note PDFs into a page-by-page interactive lecture.</p>
+          <p class="eyebrow">ProfessorAI POC</p>
+          <h1>Personal Tutor Mode</h1>
+          <p class="lede">Turn course material into grounded explanations, questions, examples, and checks that match your starting point.</p>
         </div>
 
         <label class="upload-card">
-          <span class="upload-title">Load Lecture PDF</span>
-          <span class="upload-hint">Pick an MIT OCW-style lecture note PDF to start.</span>
-          <input id="pdf-input" type="file" accept="application/pdf" />
+          <span class="upload-title">Load Course Material</span>
+          <span class="upload-hint">Pick a PDF, DOCX, TXT, or Markdown file to start.</span>
+          <input id="pdf-input" type="file" accept="application/pdf,.pdf,.doc,.docx,text/plain,.txt,.md,text/markdown" />
         </label>
 
         <label class="profile-card">
           <span class="profile-title">Your Starting Point</span>
-          <span class="profile-hint">Briefly describe your background so explanations can meet you there.</span>
+          <span class="profile-hint">Tell the tutor what you know, what feels shaky, and what you want from this material.</span>
           <textarea
             id="learner-profile"
             rows="4"
-            placeholder="Example: I know basic calculus but I am new to probability and proofs."
+            placeholder="Example: I know basic calculus, but probability proofs and notation feel new."
           ></textarea>
           <span id="learner-profile-count" class="profile-count" data-tone="neutral">0/50 words</span>
         </label>
@@ -56,37 +56,38 @@
       <main class="workspace">
         <section class="viewer-panel">
           <div class="panel-header">
-            <h2>Lecture Page</h2>
-            <span id="page-status">Upload a PDF to begin.</span>
+            <h2>Course Page</h2>
+            <span id="page-status">Upload course material to begin.</span>
           </div>
           <div class="pdf-frame">
             <canvas id="pdf-canvas"></canvas>
+            <article id="text-page" class="text-page" hidden></article>
           </div>
         </section>
 
         <section class="lecture-panel">
           <div class="panel-header">
-            <h2>Lecture Controls</h2>
-            <span>Grounded to the current page</span>
+            <h2>Tutor Controls</h2>
+            <span>Grounded to this page</span>
           </div>
 
           <div class="quick-actions">
-            <button data-mode="explain-simple" disabled>Explain Page</button>
+            <button data-mode="explain-simple" disabled>Explain</button>
           </div>
 
           <div class="response-meta">
-            <span id="response-status" class="response-status" data-tone="neutral">Upload a PDF to begin</span>
+            <span id="response-status" class="response-status" data-tone="neutral">Upload course material to begin</span>
           </div>
 
           <div id="chat-log" class="chat-log">
-            <p class="chat-empty">Upload a PDF, then choose an action or ask a question.</p>
+            <p class="chat-empty">Upload course material, then choose an action or ask a question.</p>
           </div>
 
           <form id="question-form" class="chat-input-row">
             <textarea
               id="page-question"
               rows="2"
-              placeholder="Ask about this page…"
+              placeholder="Ask anything about this page or say what feels confusing…"
               disabled
             ></textarea>
             <button type="submit" disabled>Send</button>

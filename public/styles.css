@@ -259,6 +259,18 @@ button.ghost {
   box-shadow: 0 20px 40px rgba(51, 38, 29, 0.14);
 }
 
+.text-page {
+  width: min(100%, 760px);
+  max-height: 100%;
+  overflow: auto;
+  padding: 2rem;
+  background: #fff;
+  border: 1px solid rgba(139, 52, 21, 0.12);
+  box-shadow: 0 20px 40px rgba(51, 38, 29, 0.1);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 .quick-actions {
   flex-wrap: wrap;
   margin-bottom: 0.9rem;
