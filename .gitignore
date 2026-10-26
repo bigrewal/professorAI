@@ -15,9 +15,13 @@ pnpm-debug.log*
 
 # Runtime and build output
 dist/
+client/dist/
 build/
 coverage/
 .cache/
+.codesense/
+.codex/
+.professorai-data/
 
 # OS and editor files
 .DS_Store
