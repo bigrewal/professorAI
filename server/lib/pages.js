@@ -12,6 +12,7 @@ export function pageExplanationsOf(course) {
       page: Number(message.page),
       text: message.text,
       explainedAt: message.createdAt || course.updatedAt,
+      ...(message.usedPageImage ? { usedPageImage: true } : {}),
     });
   }
   for (const record of course.pageExplanations || []) {
@@ -44,6 +45,7 @@ export function studyPages(course) {
       explained: Boolean(explanation),
       explainedAt: explanation?.explainedAt || null,
       explanation: explanation?.text || "",
+      explanationUsedPageImage: Boolean(explanation?.usedPageImage),
       chatRevision: pageChatRevision(course, document.id, page.number),
       autoExplain: !course.pageChatResets?.[pageKey(document.id, page.number)],
     }];
@@ -56,6 +58,18 @@ export function pageChatRevision(course, documentId, page) {
 
 export function pageChatHistory(course, documentId, page) {
   return (course.chat || []).filter((message) => message.documentId === documentId && message.page === Number(page));
+}
+
+// Recent questions are drawn from the same bounded chat history shown to the student.
+export function recentQuestionsOf(course, excludePage = null) {
+  if (course.learner?.useRecentQuestions === false) return [];
+  return (course.chat || [])
+    .filter((message) => message.role === "student" && message.kind === "question" && message.text?.trim()
+      && (!excludePage || message.documentId !== excludePage.documentId || message.page !== excludePage.number))
+    .slice(-6)
+    .map((message) => ({ id: message.id, documentId: message.documentId, page: message.page,
+      documentName: course.documents?.find((document) => document.id === message.documentId)?.originalName || "Document",
+      text: message.text.slice(0, 400) }));
 }
 
 export function taughtPageCounts(course) {

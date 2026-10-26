@@ -4,9 +4,9 @@ const PROVIDERS = [
     label: "xAI",
     env: "XAI_API_KEY",
     models: [
+      { id: "grok-4.3", label: "Grok 4.3", blurb: "Fast, responsive page tutoring." },
       { id: "grok-4.7", label: "Grok 4.7", blurb: "Newest Grok. Strong on long readings." },
       { id: "grok-4.5", label: "Grok 4.5", blurb: "A balance of depth and speed." },
-      { id: "grok-4.3", label: "Grok 4.3", blurb: "Clear, steady explanations." },
     ],
   },
   {
@@ -45,6 +45,10 @@ function configured(provider) {
   return Boolean(String(process.env[provider.env] || "").trim());
 }
 
+export function supportsPageImage(modelId) {
+  return ["xai:grok-4.3", "xai:grok-4.5", "xai:grok-4.7"].includes(modelId);
+}
+
 export function modelCatalog(savedId = "") {
   const providers = PROVIDERS.map((provider) => ({
     id: provider.id,
@@ -72,6 +76,7 @@ export function modelCatalog(savedId = "") {
     selected,
     selectedLabel: current?.label || "",
     live: Boolean(selected),
+    supportsPageImage: supportsPageImage(selected),
     providers,
   };
 }

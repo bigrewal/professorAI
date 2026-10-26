@@ -43,7 +43,7 @@ export async function completeObject({ schema, messages, modelId, maxOutputToken
   return object;
 }
 
-export async function streamReply({ messages, modelId, onDelta, maxOutputTokens = 700, temperature = 0.5, timeoutMs = 45000 }) {
+export async function streamReply({ messages, modelId, onDelta, maxOutputTokens = 700, temperature = 0.5, timeoutMs = 45000, reasoningEffort }) {
   const { system, messages: conversation } = splitPrompt(messages);
   const result = streamText({
     model: languageModel(modelId),
@@ -51,6 +51,7 @@ export async function streamReply({ messages, modelId, onDelta, maxOutputTokens 
     messages: conversation,
     maxOutputTokens,
     temperature,
+    ...(reasoningEffort && modelId.startsWith("xai:") ? { providerOptions: { xai: { reasoningEffort } } } : {}),
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
 

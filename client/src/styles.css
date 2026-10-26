@@ -516,11 +516,53 @@ body { margin: 0; background: #edf0eb; }
   padding: 16px;
 }
 .bubble { border-radius: 14px; padding: 12px 14px; }
-.bubble span { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 700; color: #667067; }
+.bubble > span { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 700; color: #667067; }
 .bubble p { margin: 0; white-space: pre-wrap; line-height: 1.55; font-size: 15px; }
 .bubble.teacher { background: #f6f6f6; }
 .bubble.student { background: #171717; color: #fff; }
-.bubble.student span { color: #cfcfcf; }
+.bubble.student > span { color: #cfcfcf; }
+.bubble[data-streaming="true"] .tutor-markdown::after { content: ""; display: inline-block; width: 3px; height: 1em; margin-left: 4px; vertical-align: -2px; background: #64834b; }
+.tutor-markdown { overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
+.tutor-markdown > :first-child { margin-top: 0; }
+.tutor-markdown > :last-child { margin-bottom: 0; }
+.tutor-markdown p { margin: 0 0 .8em; white-space: normal; }
+.tutor-markdown h1, .tutor-markdown h2, .tutor-markdown h3 { font-size: 1em; line-height: 1.4; margin: 1em 0 .4em; }
+.tutor-markdown ul, .tutor-markdown ol { margin: .5em 0 .8em; padding-left: 1.4em; }
+.tutor-markdown li + li { margin-top: .3em; }
+.tutor-markdown pre, .tutor-markdown .katex-display { overflow-x: auto; max-width: 100%; }
+.tutor-markdown pre { padding: 10px; border-radius: 8px; background: #e9eee7; }
+.tutor-markdown code { font-size: .9em; }
+.tutor-markdown a { color: #365f3c; text-decoration: underline; }
+.sidebar[hidden] { display: none; }
+.sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border: 1px solid #dfe7db; border-radius: 10px; background: #fff; color: #3b563b; cursor: pointer; }
+.sidebar-toggle:hover { background: #eff5eb; }
+.reading-label { font-size: 13px; font-weight: 650; color: #536950; white-space: nowrap; }
+.shell[data-reading="true"] .topbar { justify-content: flex-start; flex-wrap: nowrap; padding-top: 10px; padding-bottom: 10px; }
+.shell[data-reading="true"] .top-links, .shell[data-reading="true"] .search, .shell[data-reading="true"] .top-upload { display: none; }
+.shell[data-reading="true"] .top-tools { margin-left: auto; flex: none; width: auto; }
+.shell[data-reading="true"] .sign-in.rt-Button { height: 36px; }
+.tutor-heading-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.tutor-source { margin-top: 10px; color: #53634d; font-size: 12px; }
+.tutor-source summary { cursor: pointer; font-weight: 650; }
+.tutor-source p { line-height: 1.45; }
+.tutor-source pre { max-height: 150px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: #fff; padding: 10px; border-radius: 8px; }
+.tutor-prompts { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 12px 10px; }
+.tutor-prompts button { border: 1px solid #dce6d6; color: #365236; background: #f7faf5; border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.tutor-prompts button:disabled { opacity: .5; cursor: default; }
+.page-image-choice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 14px; color: #425d42; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.page-image-choice input { flex: none; margin: 2px 0 0; accent-color: #3f693e; }
+.page-image-choice small { display: block; color: #738070; font-size: 11px; }
+.ask-error { margin: 0 12px 8px; color: #9b3026; font-size: 12px; line-height: 1.45; }
+.learning-memory-dialog { max-height: min(90vh, 800px); overflow-y: auto; }
+.learning-memory-dialog label { display: block; }
+.memory-checkbox { display: flex !important; gap: 8px; align-items: start; margin-top: 18px; font-size: 14px; }
+.memory-checkbox input { margin-top: 3px; accent-color: #405f3b; }
+.memory-hint { color: #677468; font-size: 12px; line-height: 1.5; }
+.memory-recent { font-size: 13px; color: #53634d; }
+.memory-recent summary { cursor: pointer; font-weight: 600; }
+.memory-recent ul { padding-left: 18px; max-height: 150px; overflow: auto; }
+.memory-recent li { margin: 8px 0; }
+.memory-recent li strong, .memory-recent li span { display: block; overflow-wrap: anywhere; }
 .tutor-ask {
   display: flex;
   gap: 8px;
@@ -682,6 +724,17 @@ button:disabled { cursor: not-allowed; }
 .page-sheet { box-shadow: 0 4px 18px #263e2d06; }
 .reader-bar { align-items: flex-start; }
 .reader-actions { flex: none; flex-wrap: wrap; }
+.reader-menu { position: relative; flex: none; }
+.reader-menu summary { color: #365538; cursor: pointer; font-size: 12px; font-weight: 650; padding: 7px 10px; border: 1px solid #dce6d6; border-radius: 9px; list-style: none; }
+.reader-menu summary::-webkit-details-marker { display: none; }
+.reader-menu summary::after { content: " ⌄"; }
+.reader-menu summary:focus-visible { outline: 3px solid #6c8a55; outline-offset: 3px; }
+.reader-menu-items { position: absolute; z-index: 5; right: 0; min-width: 170px; padding: 7px; display: grid; gap: 2px; background: #fff; border: 1px solid #dfe7d8; border-radius: 12px; box-shadow: 0 10px 30px #253a2422; }
+.reader-menu-items .text-btn { text-align: left; padding: 9px 10px; border-radius: 7px; white-space: nowrap; }
+.reader-menu-items .text-btn:hover:not(:disabled) { background: #eff5eb; }
+.page-jump { display: flex; align-items: center; gap: 5px; color: #65705f; font-size: 12px; white-space: nowrap; }
+.page-jump input { width: 54px; border: 1px solid #d5decf; border-radius: 6px; padding: 5px; color: #253d2a; background: white; font: inherit; text-align: center; }
+.page-jump input[aria-invalid="true"] { border-color: #b6483e; }
 .reader .page-turn { padding-bottom: 4px; }
 .study-notice { font-size: 13px; color: #667067; line-height: 1.6; }
 @media (max-width: 1100px) {
@@ -696,6 +749,8 @@ button:disabled { cursor: not-allowed; }
   .tutor-log { max-height: 440px; }
 }
 @media (max-width: 600px) {
+  .reader .reader-bar { flex-direction: row; align-items: flex-start; }
+  .reader .reader-title { flex: 1; }
   .shell { height: 100dvh; }
   .logo-word { font-size: 20px; }
   .logo-mark { width: 34px; height: 34px; }
@@ -734,10 +789,10 @@ button:disabled { cursor: not-allowed; }
 .course-card-footer { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 1px solid #edf0e8; }
 .rename-course { color: #365538; }
 .reader-title { min-width: 0; }
-.reader-back { display: inline-block; margin-bottom: 10px; text-decoration: none; }
-.reader-title p { overflow-wrap: anywhere; }
-.page-map { flex: none; margin: 12px 0 0; border: 1px solid #dfe7d8; border-radius: 12px; background: #fff; }
-.page-map summary { display: flex; align-items: center; gap: 8px; padding: 12px 14px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+.reader-back { display: inline-block; margin-bottom: 4px; text-decoration: none; }
+.reader-title p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.page-map { flex: none; margin: 6px 0 0; border: 1px solid #dfe7d8; border-radius: 12px; background: #fff; }
+.page-map summary { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
 .page-map summary::-webkit-details-marker { display: none; }
 .page-map summary::after { content: "⌄"; margin-left: 4px; }
 .page-map[open] summary::after { content: "⌃"; }
@@ -750,7 +805,7 @@ button:disabled { cursor: not-allowed; }
 .page-chip[data-explained="true"] { background: #eaf5e5; color: #2a6335; border-color: #c5dfbb; }
 .page-chip[aria-current="page"] { box-shadow: 0 0 0 2px #426a39; border-color: #426a39; font-weight: 800; }
 .page-pending { width: 11px; height: 11px; border: 1px solid #cbd3c4; border-radius: 50%; }
-.page-status-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; font-size: 12px; color: #6a7564; }
+.page-status-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 6px 0; font-size: 12px; color: #6a7564; }
 .page-explained { display: inline-flex; align-items: center; gap: 5px; }
 .page-explained[data-explained="true"] { color: #2b6a36; font-weight: 700; }
 .pdf-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; border-radius: 14px; border: 1px solid #dee4d8; background: #e9ede5; }
@@ -758,7 +813,7 @@ button:disabled { cursor: not-allowed; }
 .pdf-toolbar label { display: inline-flex; align-items: center; gap: 5px; }
 .pdf-toolbar select { border: 1px solid #d5decf; background: white; border-radius: 5px; padding: 4px; font: inherit; color: #365538; }
 .pdf-toolbar .text-btn { font-size: 11px; text-decoration: none; }
-.pdf-stage { flex: 1; min-height: 0; position: relative; padding: 16px; overflow: auto; overscroll-behavior: contain; }
+.pdf-stage { flex: 1; min-height: 0; position: relative; padding: 10px; overflow: auto; overscroll-behavior: contain; }
 .pdf-paper { width: fit-content; margin: 0 auto; background: white; box-shadow: 0 2px 12px #2030191a; }
 .pdf-paper canvas { display: block; }
 .pdf-loading { margin: 20px 0; text-align: center; font-size: 13px; color: #526749; }
@@ -766,7 +821,7 @@ button:disabled { cursor: not-allowed; }
 .reader .page-turn > span { font-size: 12px; white-space: nowrap; }
 @media (max-width: 1100px) {
   .pdf-viewer { flex: none; min-height: 350px; }
-  .pdf-stage { flex: none; max-height: 70vh; min-height: 280px; }
+  .pdf-stage { flex: none; height: clamp(180px, calc(100dvh - 445px), 65dvh); max-height: 700px; min-height: 180px; }
 }
 @media (max-width: 600px) {
   .reader-actions { gap: 18px; }
@@ -777,10 +832,15 @@ button:disabled { cursor: not-allowed; }
   .page-turn .text-btn { font-size: 12px; }
 }
 @media (min-width: 801px) and (max-width: 1100px) {
+  .sidebar { flex-direction: row; align-items: center; gap: 16px; }
+  .side-nav { flex: 1; min-width: 0; margin-top: 0; }
+  .logo-mark { width: 38px; height: 38px; }
+  .logo-word { font-size: 18px; }
+  .topbar { padding-top: 8px; padding-bottom: 8px; }
   .reader { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); overflow: hidden; }
   .page-column, .tutor-pane { flex: auto; min-height: 0; }
   .pdf-viewer { flex: 1; min-height: 0; }
-  .pdf-stage { flex: 1; min-height: 0; max-height: none; }
+  .pdf-stage { flex: 1; height: auto; min-height: 0; max-height: none; }
   .tutor-log { max-height: none; }
   .reader-bar { flex-wrap: wrap; }
 }

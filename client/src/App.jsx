@@ -77,7 +77,7 @@ export function App() {
   useEffect(() => { document.title = visibleCourse?.title ? `${visibleCourse.title} · Professor` : "Professor"; }, [visibleCourse?.title]);
 
   return <>
-    <Shell panel={route.panel} models={models} onSelectModel={async (modelId) => setModels(await professorApi.saveModel(modelId))}
+    <Shell panel={route.panel} reading={route.name === "course"} models={models} onSelectModel={async (modelId) => setModels(await professorApi.saveModel(modelId))}
       query={query} onQuery={setQuery} onUpload={() => setUploadOpen(true)} onNavigate={(panel) => {
         if (panel === "progress" && route.courseId) { openProgress(route.courseId); return; }
         window.location.hash = panel === "dashboard" ? "#/" : `#/?panel=${panel}`;

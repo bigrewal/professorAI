@@ -98,6 +98,7 @@ function extractPdfPageText(content) {
       x: item.transform?.[4] ?? 0,
       y: item.transform?.[5] ?? 0,
       width: item.width || 0,
+      hasEOL: item.hasEOL,
     }))
     .sort((a, b) => (Math.abs(a.y - b.y) > 2 ? b.y - a.y : a.x - b.x));
 
@@ -117,6 +118,7 @@ function extractPdfPageText(content) {
       }
     }
     text += item.str;
+    if (item.hasEOL) text += "\n";
     lastY = item.y;
     lastX = item.x;
     lastWidth = item.width;

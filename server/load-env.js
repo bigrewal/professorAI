@@ -2,9 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const envPath = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-if (existsSync(envPath)) {
+// Shell variables take precedence, followed by local overrides and shared defaults.
+for (const filename of [".env.local", ".env"]) {
+  const envPath = resolve(root, filename);
+  if (!existsSync(envPath)) continue;
   for (const line of readFileSync(envPath, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;

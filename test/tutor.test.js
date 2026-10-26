@@ -163,6 +163,9 @@ describe("tutor", { concurrency: 1 }, () => {
         question: "What does it mean for x to get close to a?",
       }),
     });
+    assert.match(answer.headers.get("content-type"), /text\/event-stream/);
+    assert.equal(answer.headers.get("x-accel-buffering"), "no");
+    assert.equal(answer.headers.get("content-encoding"), null);
     const body = await answer.text();
     assert.match(body, /event: delta/);
     assert.match(body, /event: done/);
@@ -244,6 +247,111 @@ describe("tutor", { concurrency: 1 }, () => {
     assert.equal(health.tutor, "notes");
     assert.equal(models.live, false);
     assert.equal(models.providers.find((provider) => provider.id === "xai").configured, false);
+  });
+
+  test("stores editable course memory and controls cross-page question context", async () => {
+    const form = new FormData();
+    form.append("materials", new Blob([buildPdf(LIMITS_PAGES)], { type: "application/pdf" }), "limits.pdf");
+    form.append("name", "Maya");
+    const created = await fetch(`${base}/api/courses`, { method: "POST", body: form }).then((response) => response.json());
+    const url = `${base}/api/courses/${created.course.id}`;
+    const patch = (body) => fetch(`${url}/learner`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let result = await patch({ background: "I know algebra", memory: "Explain notation slowly", useRecentQuestions: false });
+    assert.equal(result.status, 200);
+    let course = (await result.json()).course;
+    assert.equal(course.learner.name, "Maya");
+    assert.equal(course.learner.memory, "Explain notation slowly");
+    assert.equal(course.learner.useRecentQuestions, false);
+    assert.equal((await patch({ memory: "x".repeat(1201) })).status, 400);
+    assert.equal((await patch({ useRecentQuestions: "yes" })).status, 400);
+    const { pages } = await fetch(`${url}/pages`).then((response) => response.json());
+    const ask = (page, question) => fetch(`${url}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documentId: page.documentId, page: page.number, question }) }).then((response) => response.text());
+    await ask(pages[0], "What does a limit mean?");
+    await ask(pages[1], "How does this law work?");
+    const { readCatalog } = await import("../server/lib/store.js");
+    const { recentQuestionsOf } = await import("../server/lib/pages.js");
+    course = (await readCatalog()).courses.find((item) => item.id === created.course.id);
+    assert.deepEqual(recentQuestionsOf(course, pages[1]), []);
+    await patch({ useRecentQuestions: true });
+    course = (await readCatalog()).courses.find((item) => item.id === created.course.id);
+    assert.deepEqual(recentQuestionsOf(course, pages[1]).map((item) => item.text), ["What does a limit mean?"]);
+    await fetch(`${url}/documents/${pages[0].documentId}/pages/1/chat`, { method: "DELETE" });
+    course = (await readCatalog()).courses.find((item) => item.id === created.course.id);
+    assert.deepEqual(recentQuestionsOf(course, pages[1]), []);
+    result = await patch({ memory: "" });
+    assert.equal((await result.json()).course.learner.memory, "");
+    course = (await fetch(url).then((response) => response.json())).course;
+    assert.equal(course.learner.background, "I know algebra");
+    assert.equal(course.learner.useRecentQuestions, true);
+  });
+
+  test("reports a live tutor failure instead of silently using notes", async () => {
+    const { streamPageAnswer } = await import("../server/lib/tutor.js");
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      const deltas = [];
+      await assert.rejects(streamPageAnswer({ question: "What is a limit?", page: { label: "page 1", text: "A limit describes an approaching value." }, learner: {}, history: [], live: true, modelId: "missing-provider:model" }, (delta) => deltas.push(delta)), /could not respond/);
+      assert.deepEqual(deltas, []);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  test("only sends an explicitly included page image and does not store it", async () => {
+    const form = new FormData();
+    form.append("materials", new Blob([buildPdf([LIMITS_PAGES[0], { title: "", body: "" }])], { type: "application/pdf" }), "image-page.pdf");
+    const created = await fetch(`${base}/api/courses`, { method: "POST", body: form }).then((response) => response.json());
+    const url = `${base}/api/courses/${created.course.id}`;
+    let course;
+    do { course = (await fetch(url).then((response) => response.json())).course; if (course.status === "building") await new Promise((resolve) => setTimeout(resolve, 20)); } while (course.status === "building");
+    const { pages } = await fetch(`${url}/pages`).then((response) => response.json());
+    const body = { documentId: pages[1].documentId, page: 2, question: "What is shown?" };
+    const post = (payload) => fetch(`${url}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    assert.equal((await post(body)).status, 422);
+    const image = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(30, 1), Buffer.from([0xff, 0xd9])]).toString('base64')}`;
+    assert.equal((await post({ ...body, pageImage: image })).status, 400);
+    const originalFetch = globalThis.fetch;
+    const priorKey = process.env.XAI_API_KEY;
+    const requests = [];
+    process.env.XAI_API_KEY = "test-key";
+    globalThis.fetch = async (request, init) => {
+      if (!String(request).startsWith("https://api.x.ai/")) return originalFetch(request, init);
+      requests.push(JSON.parse(init.body));
+      const events = [
+        { id: "test", object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta: { content: "I can see the page." }, finish_reason: null }] },
+        { id: "test", object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      ];
+      return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+    };
+    try {
+      assert.equal((await post({ ...body, pageImage: "data:image/jpeg;base64,bad" })).status, 400);
+      assert.equal((await post({ ...body, pageImage: `data:image/jpeg;base64,${'A'.repeat(800000)}` })).status, 400);
+      const response = await post({ ...body, pageImage: image });
+      assert.match(await response.text(), /event: done/);
+      const content = requests[0].messages.find((message) => message.role === "user").content;
+      assert.ok(content.some((item) => item.type === "image_url" && item.image_url.url === image));
+      course = (await fetch(url).then((value) => value.json())).course;
+      assert.equal(course.chat.find((message) => message.role === "student").usedPageImage, true);
+      const catalog = await import('node:fs/promises').then(({ readFile }) => readFile(join(dataDir, 'catalog.json'), 'utf8'));
+      assert.equal(catalog.includes(image), false);
+      assert.equal((await post(body)).status, 422);
+      const explain = (payload) => fetch(`${url}/explain`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      assert.equal((await explain(body)).status, 422);
+      const explained = await explain({ ...body, pageImage: image });
+      assert.match(await explained.text(), /event: done/);
+      const reopenedPage = (await fetch(`${url}/pages`).then((value) => value.json())).pages[1];
+      assert.equal(reopenedPage.explained, true);
+      assert.equal(reopenedPage.explanationUsedPageImage, true);
+      const cached = await explain(body);
+      assert.match(await cached.text(), /"usedPageImage":true/);
+      assert.equal(requests.length, 2);
+      const persisted = await import('node:fs/promises').then(({ readFile }) => readFile(join(dataDir, 'catalog.json'), 'utf8'));
+      assert.equal(persisted.includes(image), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (priorKey === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = priorKey;
+    }
   });
 
   test("resets one page chat and its cached explanation without clearing other pages", async () => {

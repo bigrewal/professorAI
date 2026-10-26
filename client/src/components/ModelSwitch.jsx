@@ -31,7 +31,7 @@ export function ModelSwitch({ catalog, onSelect }) {
       <DropdownMenu.Content align="end" style={{ width: 340 }}>
         <Box px="3" py="2">
           <Text size="1" color="gray">
-            {catalog?.live ? "New explanations and replies use the tutor you select. Start a page fresh to replace its saved explanation." : "No LLM is connected. Add a provider API key in the local .env file, then restart Professor. Grok uses XAI_API_KEY."}
+            {catalog?.live ? "New explanations and replies use the tutor you select. Start a page fresh to replace its saved explanation." : "No LLM is connected. Add a provider API key in .env.local, then restart Professor. Grok uses XAI_API_KEY."}
           </Text>
           {error ? (
             <Text as="p" size="1" color="red" mt="2">

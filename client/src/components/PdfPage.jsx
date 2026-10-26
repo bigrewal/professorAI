@@ -1,18 +1,44 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { openPdf } from "../pdf.js";
 
-export function PdfPage({ url, pageNumber, documentName, text }) {
+export const PdfPage = forwardRef(function PdfPage({ url, pageNumber, documentName, text }, ref) {
   const stage = useRef(null);
   const paper = useRef(null);
   const [pdf, setPdf] = useState(null);
-  const [width, setWidth] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState("page");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
 
+  useImperativeHandle(ref, () => ({
+    async getPageImage() {
+      if (!pdf) throw new Error("The PDF is still opening. Try again in a moment.");
+      const page = await pdf.getPage(pageNumber);
+      const original = page.getViewport({ scale: 1 });
+      for (const maxSide of [1600, 1100]) {
+        const viewport = page.getViewport({ scale: maxSide / Math.max(original.width, original.height) });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("The page image could not be prepared.");
+        await page.render({ canvasContext: context, viewport, background: "white" }).promise;
+        const image = canvas.toDataURL("image/jpeg", .78);
+        canvas.width = 0;
+        canvas.height = 0;
+        if (image.startsWith("data:image/jpeg;base64,") && image.length <= 800000) return image;
+      }
+      throw new Error("This page image is too large to send. Try asking about the text instead.");
+    },
+  }), [pdf, pageNumber]);
+
   useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.floor(entry.contentRect.width);
+      const height = Math.floor(entry.contentRect.height);
+      setSize((current) => current.width === width && current.height === height ? current : { width, height });
+    });
     observer.observe(stage.current);
     return () => observer.disconnect();
   }, []);
@@ -30,7 +56,7 @@ export function PdfPage({ url, pageNumber, documentName, text }) {
   }, [url, retry]);
 
   useEffect(() => {
-    if (!pdf || !width) return undefined;
+    if (!pdf || !size.width || !size.height) return undefined;
     let stopped = false;
     let renderTask;
     const container = paper.current;
@@ -45,7 +71,10 @@ export function PdfPage({ url, pageNumber, documentName, text }) {
       const page = await pdf.getPage(pageNumber);
       if (stopped) return;
       const original = page.getViewport({ scale: 1 });
-      const viewport = page.getViewport({ scale: (width / original.width) * zoom });
+      const widthScale = size.width / original.width;
+      const fitScale = Math.min(widthScale, size.height / original.height);
+      const scale = zoom === "width" ? widthScale : fitScale * (zoom === "page" ? 1 : Number(zoom));
+      const viewport = page.getViewport({ scale });
       const pixelScale = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(16000000 / (viewport.width * viewport.height)));
       canvas.width = Math.floor(viewport.width * pixelScale);
       canvas.height = Math.floor(viewport.height * pixelScale);
@@ -61,14 +90,14 @@ export function PdfPage({ url, pageNumber, documentName, text }) {
       }
     });
     return () => { stopped = true; renderTask?.cancel(); canvas.remove(); };
-  }, [pdf, width, zoom, pageNumber, documentName]);
+  }, [pdf, size.width, size.height, zoom, pageNumber, documentName]);
 
   return (
     <div className="pdf-viewer">
       <div className="pdf-toolbar">
         <span>Original PDF · page {pageNumber}</span>
-        <label>Zoom <select aria-label="PDF zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}>
-          <option value={1}>Fit width</option><option value={1.25}>125%</option><option value={1.5}>150%</option><option value={2}>200%</option>
+        <label>Zoom <select aria-label="PDF zoom" value={zoom} onChange={(event) => setZoom(event.target.value)}>
+          <option value="page">Fit page</option><option value="width">Fit width</option><option value="1.25">125% of fit</option><option value="1.5">150% of fit</option><option value="2">200% of fit</option>
         </select></label>
         <a href={`${url}#page=${pageNumber}`} target="_blank" rel="noreferrer" className="text-btn">Open original ↗</a>
       </div>
@@ -80,4 +109,4 @@ export function PdfPage({ url, pageNumber, documentName, text }) {
       {text ? <div className="sr-only">{text}</div> : null}
     </div>
   );
-}
+});

@@ -12,6 +12,32 @@ function response(chunks) {
   }));
 }
 
+test('SSE delivers partial text while the response is still open', async () => {
+  let controller;
+  const stream = new Response(new ReadableStream({ start(value) { controller = value; } }));
+  const encoder = new TextEncoder();
+  const deltas = [];
+  let done = false;
+  let firstDelta;
+  const received = new Promise((resolve) => { firstDelta = resolve; });
+  const reading = readSse(stream, {
+    onDelta(value) { deltas.push(value); firstDelta(); },
+    onDone() { done = true; },
+  });
+  controller.enqueue(encoder.encode('event: delta\ndata: {"delta":"First words"}\n\n'));
+  try {
+    await received;
+    assert.deepEqual(deltas, ['First words']);
+    assert.equal(done, false);
+    controller.enqueue(encoder.encode('event: delta\ndata: {"delta":" arrive live."}\n\nevent: done\ndata: {"text":"First words arrive live."}\n\n'));
+  } finally {
+    controller.close();
+    await reading;
+  }
+  assert.equal(deltas.join(''), 'First words arrive live.');
+  assert.equal(done, true);
+});
+
 test('SSE handles CRLF boundaries split across network chunks', async () => {
   const deltas = [];
   let done;

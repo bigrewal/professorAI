@@ -20,9 +20,9 @@ import {
   touch,
   updateCatalog,
 } from "./lib/store.js";
-import { assertSelectable, modelCatalog, modelLabel, resolveModelId } from "./lib/models.js";
+import { assertSelectable, modelCatalog, modelLabel, resolveModelId, supportsPageImage } from "./lib/models.js";
 import { formatBytes, nowIso, safeDisplayName } from "./lib/text.js";
-import { explainedPagesOf, pageChatHistory, pageChatRevision, pageExplanationsOf, resetPageChat, studyPages } from "./lib/pages.js";
+import { explainedPagesOf, pageChatHistory, pageChatRevision, pageExplanationsOf, recentQuestionsOf, resetPageChat, studyPages } from "./lib/pages.js";
 import {
   createScript,
   createSyllabus,
@@ -86,6 +86,7 @@ function openSse(res) {
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
     Connection: "keep-alive",
   });
   res.flushHeaders();
@@ -118,7 +119,7 @@ function blankProgress(syllabus) {
   };
 }
 
-function chatMessage({ role, kind, documentId, page, text, chatRevision = 0 }) {
+function chatMessage({ role, kind, documentId, page, text, chatRevision = 0, usedPageImage = false }) {
   return {
     id: randomUUID(),
     role,
@@ -127,8 +128,17 @@ function chatMessage({ role, kind, documentId, page, text, chatRevision = 0 }) {
     page: Number(page),
     text,
     chatRevision,
+    ...(usedPageImage ? { usedPageImage: true } : {}),
     createdAt: nowIso(),
   };
+}
+
+function validPageImage(value) {
+  if (typeof value !== "string" || value.length > 800000) return false;
+  const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match || match[1].length % 4 !== 0) return false;
+  const image = Buffer.from(match[1], "base64");
+  return image.length >= 4 && image[0] === 0xff && image[1] === 0xd8 && image[image.length - 2] === 0xff && image[image.length - 1] === 0xd9;
 }
 
 async function ingestFile(file) {
@@ -354,7 +364,9 @@ app.use(
     },
   }),
 );
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => !String(res.getHeader("Content-Type") || "").startsWith("text/event-stream") && compression.filter(req, res),
+}));
 app.use(express.json({ limit: "1mb" }));
 
 for (const folder of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
@@ -611,10 +623,18 @@ app.post(
 app.patch(
   "/api/courses/:courseId/learner",
   asyncHandler(async (req, res) => {
-    const learner = normalizeLearner(req.body || {});
+    if (req.body?.memory !== undefined && (typeof req.body.memory !== "string" || req.body.memory.length > 1200)) {
+      sendJson(res, 400, { error: "Learning notes must be text under 1200 characters." });
+      return;
+    }
+    if (req.body?.useRecentQuestions !== undefined && typeof req.body.useRecentQuestions !== "boolean") {
+      sendJson(res, 400, { error: "Recent-question preference must be on or off." });
+      return;
+    }
     const course = await updateCatalog(async (catalog) => {
       const current = findCourse(catalog, req.params.courseId);
       if (!current) return null;
+      const learner = normalizeLearner({ ...current.learner, ...req.body });
       const changed = learnerKey(current.learner) !== learnerKey(learner);
       current.learner = learner;
       if (changed) current.scripts = {};
@@ -717,7 +737,16 @@ app.post(
       (item) => item.documentId === req.body?.documentId && item.number === Number(req.body?.page),
     );
     if (!page) { sendJson(res, 404, { error: "That page is not in this course." }); return; }
-    if (!page.canExplain) {
+    const existing = pageExplanationsOf(course).find(
+      (record) => record.documentId === page.documentId && record.page === page.number,
+    );
+    const modelId = resolveModelId(catalog.settings?.modelId);
+    const pageImage = req.body.pageImage;
+    if (pageImage !== undefined && (!page.isPdf || !validPageImage(pageImage) || !supportsPageImage(modelId))) {
+      sendJson(res, 400, { error: "The page image could not be used. Choose a supported Grok model and try again." });
+      return;
+    }
+    if (!page.canExplain && !pageImage && !existing) {
       sendJson(res, 422, { error: "This page has no readable text to explain. You can still view the original PDF." });
       return;
     }
@@ -741,19 +770,15 @@ app.post(
       };
       touch(current);
     });
-    const existing = pageExplanationsOf(course).find(
-      (record) => record.documentId === page.documentId && record.page === page.number,
-    );
     openSse(res);
     if (existing) {
-      writeSse(res, "done", { text: existing.text, explainedAt: existing.explainedAt, explainedPages: explainedPagesOf(course), chat: course.chat || [] });
+      writeSse(res, "done", { text: existing.text, explainedAt: existing.explainedAt, usedPageImage: Boolean(existing.usedPageImage), explainedPages: explainedPagesOf(course), chat: course.chat || [] });
       res.end();
       return;
     }
-    const modelId = resolveModelId(catalog.settings?.modelId);
     let explanation;
     try {
-      explanation = await streamPageExplanation({ page, learner: course.learner, history: pageChatHistory(course, page.documentId, page.number), live: Boolean(modelId), modelId },
+      explanation = await streamPageExplanation({ page, pageImage, learner: course.learner, history: pageChatHistory(course, page.documentId, page.number), recentQuestions: recentQuestionsOf(course, page), live: Boolean(modelId), modelId },
         (delta) => writeSse(res, "delta", { delta }));
     } catch (error) {
       writeSse(res, "error", { error: error instanceof Error ? error.message : "The page could not be explained." });
@@ -761,7 +786,7 @@ app.post(
       return;
     }
     if (!explanation?.trim()) throw new Error("The tutor returned an empty explanation.");
-    const message = chatMessage({ role: "teacher", kind: "explain", documentId: page.documentId, page: page.number, text: explanation.slice(0, 8000), chatRevision: revision });
+    const message = chatMessage({ role: "teacher", kind: "explain", documentId: page.documentId, page: page.number, text: explanation.slice(0, 8000), chatRevision: revision, usedPageImage: Boolean(pageImage) });
     const saved = await updateCatalog((catalogState) => {
       const current = findCourse(catalogState, course.id);
       if (!current) return null;
@@ -769,13 +794,13 @@ app.post(
       const records = pageExplanationsOf(current);
       let record = records.find((item) => item.documentId === page.documentId && item.page === page.number);
       if (!record) {
-        record = { documentId: page.documentId, page: page.number, text: message.text, explainedAt: message.createdAt, modelId };
+        record = { documentId: page.documentId, page: page.number, text: message.text, explainedAt: message.createdAt, modelId, ...(pageImage ? { usedPageImage: true } : {}) };
         records.push(record);
         current.chat = [...(current.chat || []), message].slice(-200);
       }
       current.pageExplanations = records;
       touch(current);
-      return { text: record.text, explainedAt: record.explainedAt, explainedPages: explainedPagesOf(current), chat: current.chat || [] };
+      return { text: record.text, explainedAt: record.explainedAt, usedPageImage: Boolean(record.usedPageImage), explainedPages: explainedPagesOf(current), chat: current.chat || [] };
     });
     if (saved?.stale) {
       writeSse(res, "error", { error: "The page chat was reset. Start a new explanation." });
@@ -826,20 +851,32 @@ app.post(
         sendJson(res, 404, { error: "Course not found." });
         return;
       }
-      const page = listReadablePages(course.documents).find(
+      const page = studyPages(course).find(
         (item) => item.documentId === req.body.documentId && item.number === Number(req.body.page),
       );
       if (!page) {
         sendJson(res, 404, { error: "That page is not in this course." });
         return;
       }
+      const modelId = resolveModelId(catalog.settings?.modelId);
+      const pageImage = req.body.pageImage;
+      if (pageImage !== undefined && (!page.isPdf || !validPageImage(pageImage) || !supportsPageImage(modelId))) {
+        sendJson(res, 400, { error: "The page image could not be used. Choose a supported Grok model and try again." });
+        return;
+      }
+      if (!page.canExplain && !pageImage) {
+        sendJson(res, 422, { error: "This page has no readable text. Include the page image to ask about it." });
+        return;
+      }
       const snapshot = {
         question,
         page,
+        pageImage,
         learner: course.learner,
         history: pageChatHistory(course, page.documentId, page.number),
-        live: Boolean(resolveModelId(catalog.settings?.modelId)),
-        modelId: resolveModelId(catalog.settings?.modelId),
+        recentQuestions: recentQuestionsOf(course, page),
+        live: Boolean(modelId),
+        modelId,
       };
       const revision = pageChatRevision(course, page.documentId, page.number);
       if (req.body?.chatRevision !== undefined && req.body.chatRevision !== revision) {
@@ -871,6 +908,7 @@ app.post(
             documentId: page.documentId,
             page: page.number,
             text: question.slice(0, 2000),
+            usedPageImage: Boolean(pageImage),
           }),
           chatMessage({
             role: "teacher",

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon, PowerMark } from "./icons.jsx";
 import { ModelSwitch } from "./ModelSwitch.jsx";
 
@@ -8,7 +9,7 @@ const NAV = [
   { id: "lessons", label: "Lessons", icon: "calendar", disabled: true },
   { id: "assessments", label: "Assessments", icon: "clipboard", disabled: true },
   { id: "challenges", label: "Challenges", icon: "star", disabled: true },
-  { id: "certification", label: "Completed", icon: "badge" },
+  { id: "certification", label: "All pages explained", icon: "badge" },
   { id: "project", label: "Materials", icon: "folder" },
   { id: "download", label: "Download", icon: "download" },
 ];
@@ -20,12 +21,24 @@ const TOP = [
   { id: "project", label: "Materials" },
 ];
 
-export function Shell({ panel, models, onSelectModel, query, onQuery, onNavigate, onUpload, children }) {
+export function Shell({ panel, reading = false, models, onSelectModel, query, onQuery, onNavigate, onUpload, children }) {
+  const [navPreference, setNavPreference] = useState(() => {
+    try {
+      const saved = localStorage.getItem("professor.sidebar");
+      return saved === "open" ? true : saved === "closed" ? false : null;
+    } catch { return null; }
+  });
+  const navOpen = navPreference ?? !reading;
+  function toggleNav() {
+    const next = !navOpen;
+    setNavPreference(next);
+    try { localStorage.setItem("professor.sidebar", next ? "open" : "closed"); } catch { /* Optional preference. */ }
+  }
   return (
-    <div className="shell">
+    <div className="shell" data-reading={reading}>
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>Skip to content</a>
       <div className="board">
-        <aside className="sidebar">
+        <aside className="sidebar" id="main-navigation" hidden={!navOpen}>
           <a className="logo" href="#/">
             <span className="logo-mark">
               <PowerMark />
@@ -61,6 +74,8 @@ export function Shell({ panel, models, onSelectModel, query, onQuery, onNavigate
         </aside>
         <div className="board-main">
           <header className="topbar">
+            <button type="button" className="sidebar-toggle" onClick={toggleNav} aria-expanded={navOpen} aria-controls="main-navigation" aria-label={navOpen ? "Hide navigation" : "Show navigation"} title={navOpen ? "Hide navigation" : "Show navigation"}><Icon name="sidebar" size={18} /></button>
+            {reading ? <span className="reading-label">Reading space</span> : null}
             <nav className="top-links" aria-label="Sections">
               {TOP.map((item) => (
                 <button
