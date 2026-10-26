@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Box, Button, DropdownMenu, Flex, Text } from "@radix-ui/themes";
+import { Button, DropdownMenu } from "@radix-ui/themes";
+import { Icon } from "./icons.jsx";
 
 export function ModelSwitch({ catalog, onSelect }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const provider = catalog?.providers?.find((item) => item.id === "xai");
   const label = catalog?.selectedLabel || "Notes only";
 
   async function choose(modelId) {
@@ -22,55 +24,28 @@ export function ModelSwitch({ catalog, onSelect }) {
   }
 
   return (
-    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+    <DropdownMenu.Root open={open} onOpenChange={(next) => { if (!busy) { setOpen(next); if (!next) setError(""); } }}>
       <DropdownMenu.Trigger>
-        <Button className="sign-in" variant="solid" disabled={!catalog || busy} aria-label="Tutor model">
-          {label}
+        <Button className="sign-in model-trigger" variant="solid" disabled={!catalog || busy} aria-label="Tutor model">
+          {label}<span aria-hidden="true" className="model-trigger-chevron">⌄</span>
         </Button>
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end" style={{ width: 340 }}>
-        <Box px="3" py="2">
-          <Text size="1" color="gray">
-            {catalog?.live ? "New explanations and replies use the tutor you select. Start a page fresh to replace its saved explanation." : "No LLM is connected. Add a provider API key in .env.local, then restart Professor. Grok uses XAI_API_KEY."}
-          </Text>
-          {error ? (
-            <Text as="p" size="1" color="red" mt="2">
-              {error}
-            </Text>
-          ) : null}
-        </Box>
-        {(catalog?.providers || []).map((provider) => (
-          <DropdownMenu.Group key={provider.id}>
-            <DropdownMenu.Label>
-              <Flex justify="between" gap="3">
-                <span>{provider.label}</span>
-                <Text size="1" color="gray" weight="regular">
-                  {provider.configured ? "Ready" : provider.env}
-                </Text>
-              </Flex>
-            </DropdownMenu.Label>
-            {provider.models.map((model) => (
-              <DropdownMenu.Item
-                key={model.id}
-                disabled={!provider.configured || busy}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  choose(model.id);
-                }}
-              >
-                <Flex direction="column" gap="1">
-                  <Text size="2" weight="medium">
-                    {model.label}
-                    {model.id === catalog?.selected ? " · current" : ""}
-                  </Text>
-                  <Text size="1" color="gray">
-                    {model.blurb}
-                  </Text>
-                </Flex>
-              </DropdownMenu.Item>
-            ))}
-          </DropdownMenu.Group>
-        ))}
+      <DropdownMenu.Content align="end" sideOffset={8} className="model-menu">
+        <div className="model-menu-header">
+          <span className="model-menu-eyebrow">YOUR TUTOR</span>
+          <h2>Choose a Grok model</h2>
+          <p>{provider?.configured ? "New explanations and replies use your selected model." : "Add XAI_API_KEY to .env.local, then restart Professor to use Grok."}</p>
+        </div>
+        <DropdownMenu.RadioGroup value={catalog?.selected || ""} onValueChange={choose}>
+          {(provider?.models || []).map((model) => (
+            <DropdownMenu.RadioItem key={model.id} value={model.id} className="model-option" disabled={!provider.configured || busy} onSelect={(event) => event.preventDefault()}>
+              <div className="model-option-copy"><span className="model-option-name">{model.label}</span><span className="model-option-description">{model.blurb}</span></div>
+              {model.id === catalog?.selected ? <span className="model-option-current"><Icon name="check" size={14} />Selected</span> : null}
+            </DropdownMenu.RadioItem>
+          ))}
+        </DropdownMenu.RadioGroup>
+        {error ? <p className="model-menu-error" role="alert">{error}</p> : null}
+        {provider?.configured ? <p className="model-menu-footnote">Saved explanations stay the same until you start a page fresh.</p> : null}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   );

@@ -2,7 +2,7 @@
 
 Professor turns course PDFs, notes, and slides into a lesson path. It teaches one idea at a time, pauses when you do, and answers by voice or text before picking the lesson back up.
 
-The interface is a Vite app in `client/`. The API is an Express server in `server/`. Teaching calls go through the [AI SDK](https://ai-sdk.dev) provider registry, so the same lesson player can use xAI, OpenAI, Anthropic, or Google.
+The interface is a Vite app in `client/`. The API is an Express server in `server/`. Teaching calls go through the [AI SDK](https://ai-sdk.dev) provider registry; the tutor currently offers Grok models from xAI.
 
 ## Run
 
@@ -11,7 +11,7 @@ npm install
 cp .env.example .env.local
 ```
 
-Add at least one provider key, then:
+Add your xAI API key, then:
 
 ```bash
 npm run dev
@@ -33,12 +33,7 @@ Tutor responses support Markdown and mathematical notation, including while stre
 
 ## Models
 
-Open the Tutor menu in the app and pick a model. Only providers with an API key are selectable:
-
-- `XAI_API_KEY` — Grok
-- `OPENAI_API_KEY` — GPT
-- `ANTHROPIC_API_KEY` — Claude
-- `GOOGLE_GENERATIVE_AI_API_KEY` — Gemini
+Open the Tutor menu in the app and pick a Grok model. Set `XAI_API_KEY` to make the models selectable.
 
 With xAI configured and no saved model choice, the tutor defaults to Grok 4.3. Page explanations and answers use its non-reasoning setting for faster responses; Grok 4.5 and 4.7 use low reasoning for page tutoring. You can still select another model from the Tutor menu.
 

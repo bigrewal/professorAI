@@ -65,7 +65,7 @@ describe("tutor", { concurrency: 1 }, () => {
     assert.equal(modelCatalog("").live, false);
   });
 
-  test("switches the active model only when that provider is configured", async () => {
+  test("offers only configured Grok models and rejects other providers", async () => {
     const blocked = await fetch(`${base}/api/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -76,15 +76,21 @@ describe("tutor", { concurrency: 1 }, () => {
     process.env.OPENAI_API_KEY = "test-key";
     process.env.XAI_API_KEY = "test-key";
     try {
-      const saved = await fetch(`${base}/api/settings`, {
+      const blockedConfiguredProvider = await fetch(`${base}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ modelId: "openai:gpt-5.4" }),
+      });
+      assert.equal(blockedConfiguredProvider.status, 400);
+      assert.equal(modelCatalog("openai:gpt-5.4").selected, "xai:grok-4.3");
+      const saved = await fetch(`${base}/api/settings`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId: "xai:grok-4.5" }),
       }).then((response) => response.json());
-      assert.equal(saved.selected, "openai:gpt-5.4");
-      assert.equal(saved.selectedLabel, "GPT-5.4");
+      assert.equal(saved.selected, "xai:grok-4.5");
+      assert.equal(saved.selectedLabel, "Grok 4.5");
       assert.equal(saved.providers.find((provider) => provider.id === "xai").configured, true);
-      assert.equal(saved.providers.find((provider) => provider.id === "anthropic").configured, false);
+      assert.deepEqual(saved.providers.map((provider) => provider.id), ["xai"]);
     } finally {
       delete process.env.OPENAI_API_KEY;
       delete process.env.XAI_API_KEY;

@@ -50,7 +50,9 @@ export function supportsPageImage(modelId) {
 }
 
 export function modelCatalog(savedId = "") {
-  const providers = PROVIDERS.map((provider) => ({
+  // The current product exposes Grok only; keep the other provider definitions
+  // available for a future release without selecting them for new requests.
+  const providers = PROVIDERS.filter((provider) => provider.id === "xai").map((provider) => ({
     id: provider.id,
     label: provider.label,
     env: provider.env,

@@ -185,6 +185,21 @@ body { margin: 0; background: #edf0eb; }
   max-width: 190px;
 }
 .sign-in.rt-Button:hover { background: #000 !important; }
+.model-trigger-chevron { margin-left: 7px; color: #c6d1c3; font-size: 14px; }
+.model-menu.rt-DropdownMenuContent { width: min(340px, calc(100vw - 24px)); border-radius: 16px; }
+.model-menu .rt-DropdownMenuViewport { padding: 8px; }
+.model-menu-header { padding: 10px 12px 12px; }
+.model-menu-eyebrow { color: #6c8069; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.model-menu-header h2 { margin: 5px 0 4px; color: #203322; font-size: 16px; line-height: 1.35; }
+.model-menu-header p, .model-menu-footnote { margin: 0; color: #71806f; font-size: 12px; line-height: 1.5; }
+.model-menu .model-option.rt-DropdownMenuItem { height: auto; min-height: 64px; padding: 10px 12px; margin: 2px 0; border-radius: 10px; align-items: center; gap: 10px; }
+.model-menu .rt-BaseMenuItemIndicator { display: none; }
+.model-option-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: flex-start; gap: 3px; }
+.model-option-name { color: #263d2a; font-size: 13px; line-height: 1.3; font-weight: 700; }
+.model-option-description { color: #687769; font-size: 12px; line-height: 1.4; white-space: normal; }
+.model-option-current { display: inline-flex; flex: none; align-items: center; gap: 3px; color: #3f6b3e; font-size: 10px; font-weight: 700; }
+.model-menu-footnote { padding: 10px 12px 6px; border-top: 1px solid #edf1eb; }
+.model-menu-error { margin: 8px 12px; color: #9b3026; font-size: 12px; line-height: 1.4; }
 
 .board-body { flex: 1; min-height: 0; overflow: auto; padding: 26px 28px 32px; background: #fdfefb; }
 .board-body:has(.player) {
