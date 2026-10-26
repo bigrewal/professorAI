@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime and build output
+dist/
+client/dist/
+build/
+coverage/
+.cache/
+.codesense/
+.codex/
+.professorai-data/
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/

@@ -1,30 +1,43 @@
-# ProfessorAI
+# Professor
 
-Release 1 is a working `AI Lecture Mode` prototype:
+Professor turns course PDFs, notes, and slides into a lesson path. It teaches one idea at a time, pauses when you do, and answers by voice or text before picking the lesson back up.
 
-- load a lecture PDF in the browser
-- render one page at a time
-- explain the current page
-- ask questions about the current page
-- quiz the user on the current page
-- give feedback on the user's answer
+The interface is a Vite app in `client/`. The API is an Express server in `server/`. Teaching calls go through the [AI SDK](https://ai-sdk.dev) provider registry, so the same lesson player can use xAI, OpenAI, Anthropic, or Google.
 
 ## Run
 
-Set your xAI API key and start the local server:
-
 ```bash
-export XAI_API_KEY=your_key_here
-npm start
+npm install
+cp .env.example .env
 ```
 
-Then open `http://localhost:3000`.
+Add at least one provider key, then:
 
-## Notes
+```bash
+npm run dev
+```
 
-- The frontend uses `pdf.js` from a CDN to render and extract page text in the browser.
-- The backend is a small Node server with no npm dependencies.
-- The backend calls xAI's Responses API at `https://api.x.ai/v1/responses`.
-- The default model is `grok-4-1-fast-reasoning`. Override it with `XAI_MODEL` if needed.
-- Responses are grounded in the current page text sent from the browser to the server.
-- This is a prototype. It does not yet support OCR-heavy scans, course libraries, authentication, or persistent progress.
+The study interface is at `http://127.0.0.1:5173`. The API is at `http://127.0.0.1:3000`.
+
+`npm start` builds the client and serves it from the API.
+
+## Models
+
+Open the Tutor menu in the app and pick a model. Only providers with an API key are selectable:
+
+- `XAI_API_KEY` — Grok
+- `OPENAI_API_KEY` — GPT
+- `ANTHROPIC_API_KEY` — Claude
+- `GOOGLE_GENERATIVE_AI_API_KEY` — Gemini
+
+Lessons opened after a switch are prepared with the new model. Rebuild a course path when you want the syllabus rewritten too. With no key, Professor still teaches directly from the text of the upload.
+
+## Files
+
+PDF, TXT, DOCX, and PPTX can be taught. Legacy `.doc` and `.ppt` files are stored, and need a text-based PDF, DOCX, PPTX, or TXT before a lesson can be made from them.
+
+## Icons
+
+Selected free Line icons (Book, Home, Folder, Search, and Clock) are [Icons by Iconstica](https://www.iconstica.com/). They use Professor’s shared colour and stroke settings. See the [Iconstica licence agreement](https://www.iconstica.com/license-agreement).
+
+Original assets: [Book](https://www.iconstica.com/free-icons/book-line), [Home](https://www.iconstica.com/free-icons/home-line), [Folder](https://www.iconstica.com/free-icons/folder-line), [Search](https://www.iconstica.com/free-icons/search-line), and [Clock](https://www.iconstica.com/free-icons/clock-line).
